@@ -16,8 +16,10 @@ const _localInstance = 'ruang.id';
   return null;
 }
 
-/// Displays a federated handle, showing just the username for the local
-/// instance and a decorated server box for cross-instance handles.
+/// Displays a federated handle as @username, like mainstream social media.
+/// Local instance handles show just @username. Cross-instance handles show
+/// @username with the remote server name to prove they are not from ruang.id.
+/// ponytail: no real favicon fetch yet; uses a simplified labeled chip.
 class _HandleDisplay extends StatelessWidget {
   const _HandleDisplay({required this.handle});
   final String handle;
@@ -32,9 +34,11 @@ class _HandleDisplay extends StatelessWidget {
     }
     final (username, instance) = parsed;
     if (instance == _localInstance) {
+      // Local instance: just show @username, no server indicator.
       return Text('@$username',
           style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
     }
+    // Cross-instance: show @username with a subtle server chip.
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Text('@$username',
           style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
@@ -45,11 +49,17 @@ class _HandleDisplay extends StatelessWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(instance,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontSize: 11,
-                )),
+        child: Row(children: [
+          Icon(Icons.language,
+              size: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(instance,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 11,
+                  )),
+        ]),
       ),
     ]);
   }

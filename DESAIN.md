@@ -38,7 +38,7 @@ The application has 4 main screens and 2 interactive modal sheets:
 ### 2.1 Home Screen (Timeline)
 - **Timeline Filter Pills:** Tabs for *Following* (user's feed), *Local* (ruang.id server), and *Federated* (entire fediverse).
 - **Compact Composer Card:** Quick button "What do you want to share?" that opens the full Compose modal.
-- **Feed Cards:** Displays sender avatar, name, handle (same-instance handles show `@username` only; cross-instance handles show `@username` with a decorated server badge), timestamp, CW badge if present, post text, and action bar (Reply, Like, Repost, Copy/Share).
+- **Feed Cards:** Displays sender avatar, name, handle (same-instance handles show `@username` only; cross-instance handles show `@username` with a server chip/favicon to prove they are not from ruang.id), timestamp, CW badge if present, post text, and action bar (Reply, Like, Repost, Copy/Share).
 - **Thread Interaction:** Tapping any card opens a detail conversation sheet (Thread Modal).
 
 ### 2.2 Explore & Search Screen
@@ -51,7 +51,7 @@ The application has 4 main screens and 2 interactive modal sheets:
 - **Notification Items:** Cards with action-specific icons (pink star for likes, green loop for reposts, blue conversation bubble for replies).
 
 ### 2.4 User Profile Screen
-- **Profile Header:** Large avatar, full name, handle display (same-instance: `@username`; cross-instance: `@username` + server badge), server connection status, and stats (Following, Followers, Posts).
+- **Profile Header:** Large avatar, full name, handle display (same-instance: `@username`; cross-instance: `@username` + server chip/favicon), server connection status, and stats (Following, Followers, Posts).
 - **Biography:** Bio text with clickable federated links.
 - **Content Tabs:** Posts, Replies, and Media.
 
