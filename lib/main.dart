@@ -233,11 +233,11 @@ class _ThreadSheet extends StatelessWidget {
           decoration: BoxDecoration(
               color: cs.surface,
               borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                const BoxShadow(
+              boxShadow: const [
+                BoxShadow(
                     color: Colors.black26,
                     blurRadius: 24,
-                    offset: const Offset(0, 12))
+                    offset: Offset(0, 12))
               ]),
           child: Column(children: [
             // Drag indicator
@@ -287,13 +287,12 @@ class _ThreadSheet extends StatelessWidget {
                       _buildGuideLine(context),
                       const SizedBox(height: 12),
                       // Reply
-                      _ThreadPostTile(
-                          post: const Post(
+                      const _ThreadPostTile(
+                          post: Post(
                               'Raka Wirawan',
                               '@raka@ruang.id',
                               'Agreed! It is wonderful to see communities sharing good things.',
-                              '8m',
-                          ),
+                              '8m'),
                           indent: true),
                     ]),
               ),
