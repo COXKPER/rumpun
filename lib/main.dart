@@ -4,6 +4,56 @@ void main() => runApp(const RumpunApp());
 
 const _green = Color(0xFF236B55);
 const _mint = Color(0xFF83C9AE);
+const _localInstance = 'ruang.id';
+
+/// Splits a federated handle like @user@instance.com into (username, instance).
+/// Returns null if the handle doesn't follow the @user@instance format.
+(String, String)? parseHandle(String handle) {
+  final parts = handle.startsWith('@') ? handle.substring(1).split('@') : handle.split('@');
+  if (parts.length == 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
+    return (parts[0], parts[1]);
+  }
+  return null;
+}
+
+/// Displays a federated handle, showing just the username for the local
+/// instance and a decorated server box for cross-instance handles.
+class _HandleDisplay extends StatelessWidget {
+  const _HandleDisplay({required this.handle});
+  final String handle;
+
+  @override
+  Widget build(BuildContext context) {
+    final parsed = parseHandle(handle);
+    if (parsed == null) {
+      // Fallback: show the raw handle as-is.
+      return Text(handle,
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
+    }
+    final (username, instance) = parsed;
+    if (instance == _localInstance) {
+      return Text('@$username',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
+    }
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('@$username',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      const SizedBox(width: 6),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(instance,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 11,
+                )),
+      ),
+    ]);
+  }
+}
 
 class RumpunApp extends StatelessWidget {
   const RumpunApp({super.key});
@@ -395,8 +445,18 @@ class _ThreadPostTile extends StatelessWidget {
                               Text(post.name,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold)),
-                              Text('${post.handle} · ${post.time}',
-                                  style: Theme.of(context).textTheme.bodySmall),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _HandleDisplay(handle: post.handle),
+                                    const SizedBox(width: 8),
+                                    Text(' · ${post.time}',
+                                        style: Theme.of(context).textTheme.bodySmall),
+                                  ],
+                                ),
+                              ),
                             ])),
                         if (post.contentWarning != null)
                           const Icon(Icons.visibility_outlined),
@@ -863,8 +923,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   .textTheme
                   .titleLarge
                   ?.copyWith(fontWeight: FontWeight.bold)),
-          const Text('@kamu@ruang.id',
-              style: TextStyle(color: Color(0xFF9AA4A0))),
+          const _HandleDisplay(handle: '@kamu@ruang.id'),
           const SizedBox(height: 8),
           const Text(
               'Happy to share stories, ideas, and small things that make the day better.',
@@ -998,9 +1057,18 @@ class _PostTileState extends State<_PostTile> {
                               Text(widget.post.name,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold)),
-                              Text(
-                                  '${widget.post.handle} · ${widget.post.time}',
-                                  style: Theme.of(context).textTheme.bodySmall),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _HandleDisplay(handle: widget.post.handle),
+                                    const SizedBox(width: 8),
+                                    Text(' · ${widget.post.time}',
+                                        style: Theme.of(context).textTheme.bodySmall),
+                                  ],
+                                ),
+                              ),
                             ])),
                         const Icon(Icons.more_horiz),
                       ]),

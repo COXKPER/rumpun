@@ -27,7 +27,7 @@ void main() {
 
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
-    expect(find.text('@kamu@ruang.id'), findsOneWidget);
+    expect(find.text('@kamu'), findsOneWidget);
     expect(find.text('128 Followers'), findsOneWidget);
 
     await tester.tap(find.text('Home'));
@@ -147,5 +147,29 @@ void main() {
     await tester.tap(find.text('Media'));
     await tester.pumpAndSettle();
     expect(find.text('Media you upload will appear here'), findsOneWidget);
+  });
+
+  testWidgets('handle display shows local and cross-instance handles',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const RumpunApp());
+
+    // Local handle should show only @username (no @ruang.id)
+    expect(find.text('@nadia'), findsOneWidget);
+    expect(find.text('@nadia@ruang.id'), findsNothing);
+
+    // Cross-instance handle should show @username
+    expect(find.text('@bima'), findsOneWidget);
+    // Cross-instance server badge should show the instance name
+    expect(find.text('mastodon.social'), findsWidgets);
+
+    // Profile header should show local handle as @kamu
+    await tester.tap(find.text('Profile'));
+    await tester.pumpAndSettle();
+    expect(find.text('@kamu'), findsOneWidget);
+    expect(find.text('@kamu@ruang.id'), findsNothing);
   });
 }
