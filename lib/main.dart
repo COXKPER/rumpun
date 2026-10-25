@@ -3,15 +3,23 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_store.dart';
 import 'fediverse_api.dart';
+import 'image_cache.dart';
 import 'oauth_callback.dart';
 
-void main() => runApp(const RumpunApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
+  runApp(const RumpunApp());
+}
 
 const _green = Color(0xFF236B55);
 FediverseApi? _activeApi;
@@ -65,6 +73,13 @@ class _RumpunAppState extends State<RumpunApp> {
     if (mounted) setState(() => _ready = true);
   }
 
+  /// Resolves the persisted language preference into a locale override.
+  Locale? get _localeOverride {
+    final tag = _appStore?.preferredLanguage ?? 'system';
+    if (tag == 'system' || tag.isEmpty) return null;
+    return Locale(tag);
+  }
+
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Fediverse',
@@ -80,6 +95,8 @@ class _RumpunAppState extends State<RumpunApp> {
               seedColor: _green, brightness: Brightness.dark),
           useMaterial3: true,
         ),
+        locale: _localeOverride,
+        supportedLocales: const [Locale('en'), Locale('id')],
         home: _ready ? const RumpunShell() : const Scaffold(
           body: Center(child: CircularProgressIndicator()),
         ),
@@ -111,13 +128,14 @@ class RumpunShell extends StatefulWidget {
 }
 
 class _RumpunShellState extends State<RumpunShell> {
+  final _homeKey = GlobalKey<_HomeScreenState>();
   int _page = 0;
   Map<String, dynamic>? _profileAccount;
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 760;
     final pages = [
-      HomeScreen(onOpenProfile: _openProfile),
+      HomeScreen(key: _homeKey, onOpenProfile: _openProfile),
       ExploreScreen(onOpenProfile: _openProfile),
       const ActivityScreen(),
       _profileAccount == null
@@ -127,6 +145,12 @@ class _RumpunShellState extends State<RumpunShell> {
               onOpenProfile: _openProfile),
     ];
     return Scaffold(
+      floatingActionButton: _currentAccount == null
+          ? null
+          : FloatingActionButton(
+              tooltip: 'New post',
+              onPressed: _compose,
+              child: const Icon(Icons.add)),
       body: SafeArea(
         child: Column(children: [
           _TopBar(onAccount: _openAccount, onSettings: _settings),
@@ -183,6 +207,19 @@ class _RumpunShellState extends State<RumpunShell> {
     );
   }
 
+  Future<void> _compose() => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (sheetContext) => _ComposeSheet(
+          onPosted: () async {
+            if (sheetContext.mounted) Navigator.pop(sheetContext);
+            setState(() => _page = 0);
+            await _homeKey.currentState?._refresh(silent: true);
+          },
+        ),
+      );
+
   Future<void> _openProfile(String acct) async {
     final api = _activeApi;
     if (api == null) return;
@@ -223,6 +260,8 @@ class _RumpunShellState extends State<RumpunShell> {
       builder: (_) => _InstanceSettingsDialog(instance: _instance),
     );
     if (!mounted) return;
+    // Rebuild even on Cancel: the language dropdown may have changed locale.
+    setState(() {});
     if (value == null || value.isEmpty) return;
     try {
       final next = FediverseApi(value);
@@ -273,6 +312,8 @@ class _InstanceSettingsDialog extends StatefulWidget {
 
 class _InstanceSettingsDialogState extends State<_InstanceSettingsDialog> {
   late final _controller = TextEditingController(text: widget.instance);
+  late String _language = _appStore?.preferredLanguage ?? 'system';
+  bool _clearing = false;
 
   @override
   void dispose() {
@@ -280,13 +321,63 @@ class _InstanceSettingsDialogState extends State<_InstanceSettingsDialog> {
     super.dispose();
   }
 
+  Future<void> _clearCache() async {
+    setState(() => _clearing = true);
+    _appStore?.clearCaches();
+    await CachedNetworkImage.wipe();
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    if (mounted) setState(() => _clearing = false);
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: const Text('Settings'),
-        content: TextField(
-          controller: _controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Default instance'),
+        content: SizedBox(
+          width: 360,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(labelText: 'Default instance'),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _language,
+              decoration: const InputDecoration(labelText: 'Language'),
+              items: const [
+                DropdownMenuItem(value: 'system', child: Text('System default')),
+                DropdownMenuItem(value: 'en', child: Text('English')),
+                DropdownMenuItem(value: 'id', child: Text('Bahasa Indonesia')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _language = value);
+                _appStore?.setPreferredLanguage(value);
+              },
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              OutlinedButton.icon(
+                onPressed: _clearing ? null : _clearCache,
+                icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                label: Text(_clearing ? 'Clearing…' : 'Clear cache'),
+              ),
+              const Spacer(),
+              if (_currentAccount != null)
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.error),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context
+                        .findAncestorStateOfType<_RumpunShellState>()
+                        ?._logout();
+                  },
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Log out'),
+                ),
+            ]),
+          ]),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
@@ -321,9 +412,9 @@ class _TopBar extends StatelessWidget {
                   ? const Icon(Icons.account_circle_outlined)
                   : CircleAvatar(
                       radius: 14,
-                      backgroundImage: ResizeImage(
-                          NetworkImage(_currentAccount!['avatar'] as String? ?? ''),
-                          width: 56, height: 56, allowUpscaling: false),
+                      backgroundImage: CachedNetworkImage(
+                          _currentAccount!['avatar'] as String? ?? '',
+                          maxWidthPx: 56, maxHeightPx: 56),
                       onBackgroundImageError: (_, __) {},
                     ),
           ),
@@ -347,6 +438,7 @@ class _ComposeSheet extends StatefulWidget {
 class _ComposeSheetState extends State<_ComposeSheet> {
   final _text = TextEditingController();
   final _spoiler = TextEditingController();
+  final _attachments = <Map<String, dynamic>>[];
   bool _posting = false;
   String? _error;
   @override
@@ -362,15 +454,47 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     super.dispose();
   }
 
+  Future<void> _pickMedia() async {
+    const typeGroup = XTypeGroup(label: 'Media', extensions: [
+      'jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm', 'mov', 'mp3', 'ogg'
+    ]);
+    final files = await openFiles(acceptedTypeGroups: [typeGroup]);
+    for (final file in files) {
+      if (_attachments.length >= 4) break;
+      setState(() => _attachments.add({'path': file.path, 'status': 'uploading'}));
+      try {
+        final media = await _activeApi!.uploadMedia(File(file.path));
+        setState(() => _attachments[_attachments.indexOf(
+            {'path': file.path, 'status': 'uploading'})] = {
+          'path': file.path,
+          'status': 'done',
+          'id': media['id'],
+          'preview': media['preview_url'] as String?,
+        });
+      } catch (error) {
+        setState(() {
+          _attachments.removeWhere((item) => item['path'] == file.path);
+          _error = 'Upload failed: $error';
+        });
+      }
+    }
+  }
+
   Future<void> _submit() async {
     final content = _text.text.trim();
-    if (content.isEmpty || _posting) return;
+    if (content.isEmpty && _attachments.isEmpty || _posting) return;
     setState(() {
       _posting = true;
       _error = null;
     });
     try {
-      await _activeApi!.post(content, spoilerText: _spoiler.text);
+      await _activeApi!.post(
+        content.isEmpty ? '.' : content,
+        spoilerText: _spoiler.text,
+        mediaIds: [
+          for (final attachment in _attachments) attachment['id'] as String
+        ],
+      );
       _text.clear();
       _spoiler.clear();
       await widget.onPosted();
@@ -406,6 +530,18 @@ class _ComposeSheetState extends State<_ComposeSheet> {
               maxLength: 500,
               decoration:
                   const InputDecoration(hintText: 'Write a post', border: OutlineInputBorder())),
+          for (final attachment in _attachments)
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.attach_file),
+              title: Text(attachment['path'].toString().split('/').last,
+                  overflow: TextOverflow.ellipsis),
+              trailing: attachment['status'] == 'done'
+                  ? const Icon(Icons.check, color: Colors.green)
+                  : const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
           TextField(
               controller: _spoiler,
               decoration: const InputDecoration(
@@ -413,13 +549,21 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                   border: OutlineInputBorder())),
           if (_error != null)
             Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: _text.text.trim().isEmpty || _posting ? null : _submit,
+          Row(children: [
+            IconButton(
+                tooltip: 'Attach media',
+                onPressed: _attachments.length >= 4 || _posting ? null : _pickMedia,
+                icon: const Icon(Icons.add_photo_alternate_outlined)),
+            const Spacer(),
+            FilledButton(
+              onPressed: _text.text.trim().isEmpty && _attachments.isEmpty ||
+                      _posting ||
+                      _attachments.any((a) => a['status'] != 'done')
+                  ? null
+                  : _submit,
               child: Text(_posting ? 'Posting…' : 'Post'),
             ),
-          ),
+          ]),
         ]),
       );
 }
@@ -595,14 +739,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) => Column(children: [
-        _PageTitle(
-            title: _feed == 0 ? 'Home' : 'Public',
-            action: _currentAccount == null
-                ? null
-                : IconButton(
-                    tooltip: 'Write post',
-                    onPressed: _compose,
-                    icon: const Icon(Icons.edit_square))),
+        _PageTitle(title: _feed == 0 ? 'Home' : 'Public'),
         _TimelineFilter(
           selected: _feed,
           options: const ['Following', 'Local', 'Federated'],
@@ -643,18 +780,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ]);
-
-  Future<void> _compose() => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (sheetContext) => _ComposeSheet(
-          onPosted: () async {
-            if (sheetContext.mounted) Navigator.pop(sheetContext);
-            await _refresh(silent: true);
-          },
-        ),
-      );
 
   Future<void> _openThread(BuildContext context, Map<String, dynamic> status) =>
       showDialog<void>(
@@ -1030,8 +1155,34 @@ class _ProfileBanner extends StatelessWidget {
   const _ProfileBanner({required this.header, required this.account});
   final String header;
   final Map<String, dynamic> account;
+
+  void _preview(BuildContext context, String url) {
+    if (MediaQuery.sizeOf(context).width >= 760) {
+      showDialog<void>(
+        context: context,
+        builder: (_) => Dialog.fullscreen(
+            child: _MediaPreview(
+                attachments: [
+                  {'url': url, 'preview_url': url, 'type': 'image'}
+                ],
+                initialIndex: 0)),
+      );
+    } else {
+      Navigator.of(context).push(MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _MediaPreview(
+            attachments: [
+              {'url': url, 'preview_url': url, 'type': 'image'}
+            ],
+            initialIndex: 0),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final avatarUrl = (account['avatar_original'] as String?) ??
+        account['avatar'] as String? ?? '';
     final hasHeader = header.isNotEmpty;
     return Stack(alignment: Alignment.bottomCenter, children: [
       Padding(
@@ -1040,14 +1191,21 @@ class _ProfileBanner extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: AspectRatio(
             aspectRatio: 3,
-            child: hasHeader
-                ? Image.network(header, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const _BannerFallback())
-                : const _BannerFallback(),
+            child: GestureDetector(
+              onTap: hasHeader ? () => _preview(context, header) : null,
+              child: hasHeader
+                  ? Image(image: CachedNetworkImage(header, maxWidthPx: 1200),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const _BannerFallback())
+                  : const _BannerFallback(),
+            ),
           ),
         ),
       ),
-      _Avatar(account: account, radius: 54),
+      GestureDetector(
+        onTap: avatarUrl.isNotEmpty ? () => _preview(context, avatarUrl) : null,
+        child: _Avatar(account: account, radius: 54),
+      ),
     ]);
   }
 }
@@ -1098,12 +1256,10 @@ class _Avatar extends StatelessWidget {
     // avatar_static is the smaller variant Mastodon serves for timelines.
     final small = (account['avatar_static'] as String?) ?? url;
     final dpr = MediaQuery.devicePixelRatioOf(context);
+    final px = (radius * 2 * dpr).round();
     return CircleAvatar(
       radius: radius,
-      backgroundImage: ResizeImage(NetworkImage(small),
-          width: (radius * 2 * dpr).round(), height: (radius * 2 * dpr).round(),
-          policy: ResizeImagePolicy.exact,
-          allowUpscaling: false),
+      backgroundImage: CachedNetworkImage(small, maxWidthPx: px, maxHeightPx: px),
       onBackgroundImageError: (_, __) {},
     );
   }
@@ -1162,15 +1318,26 @@ class _StateMessage extends StatelessWidget {
       );
 }
 
-class _PostTile extends StatelessWidget {
+class _PostTile extends StatefulWidget {
   const _PostTile({required this.post, required this.onProfile, required this.onTap});
   final Post post;
   final ValueChanged<String> onProfile;
   final VoidCallback onTap;
   @override
+  State<_PostTile> createState() => _PostTileState();
+}
+
+class _PostTileState extends State<_PostTile> {
+  /// Local override for like/boost flags so the icon reacts before a refetch.
+  final _optimistic = <String, bool>{};
+  Post get post => widget.post;
+
+  @override
   Widget build(BuildContext context) {
     final attachments = post.data['media_attachments'] as List<dynamic>? ?? const [];
     final spoiler = post.data['spoiler_text'] as String? ?? '';
+    final favourited = _optimistic['favourited'] ?? post.data['favourited'] == true;
+    final reblogged = _optimistic['reblogged'] ?? post.data['reblogged'] == true;
     final theme = Theme.of(context);
     final signedIn = _currentAccount != null;
     return Card(
@@ -1180,7 +1347,7 @@ class _PostTile extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
-            onTap: () => onProfile(post.acct),
+            onTap: () => widget.onProfile(post.acct),
             child: Row(children: [
               _Avatar(account: post.account, radius: 18),
               const SizedBox(width: 10),
@@ -1201,9 +1368,16 @@ class _PostTile extends StatelessWidget {
                   attachment,
             ]),
           Row(children: [
-            IconButton(tooltip: 'Reply', onPressed: onTap, icon: const Icon(Icons.mode_comment_outlined)),
-            IconButton(tooltip: 'Like', onPressed: signedIn ? null : () => _action(post.id, 'favourite'), icon: const Icon(Icons.favorite_border)),
-            IconButton(tooltip: 'Boost', onPressed: signedIn ? null : () => _action(post.id, 'reblog'), icon: const Icon(Icons.repeat)),
+            IconButton(tooltip: 'Reply', onPressed: widget.onTap, icon: const Icon(Icons.mode_comment_outlined)),
+            IconButton(
+                tooltip: favourited ? 'Unlike' : 'Like',
+                onPressed: signedIn ? () => _toggle('favourited', favourited, 'like', post.id) : null,
+                icon: Icon(favourited ? Icons.favorite : Icons.favorite_border,
+                    color: favourited ? const Color(0xFFE0245E) : null)),
+            IconButton(
+                tooltip: reblogged ? 'Undo boost' : 'Boost',
+                onPressed: signedIn ? () => _toggle('reblogged', reblogged, 'repost', post.id) : null,
+                icon: Icon(Icons.repeat, color: reblogged ? _green : null)),
             const Spacer(),
             IconButton(tooltip: 'Share', onPressed: () => _share(context, post), icon: const Icon(Icons.ios_share)),
           ]),
@@ -1212,9 +1386,11 @@ class _PostTile extends StatelessWidget {
     );
   }
 
-  Future<void> _action(String id, String action) async {
+  /// Calls the API, then flips the flag locally so the icon reacts instantly.
+  Future<void> _toggle(String flag, bool on, String action, String id) async {
     try {
-      await _activeApi!.action(id, action);
+      final result = await _activeApi!.action(id, on ? 'un$action' : action);
+      setState(() => _optimistic[flag] = result[flag] == true);
     } catch (_) {}
   }
 }
@@ -1326,16 +1502,32 @@ class _MediaGallery extends StatelessWidget {
                 height: single ? null : 110,
                 child: AspectRatio(
                   aspectRatio: single ? _attachmentAspect(attachment) : 1,
-                  child: Image.network(
-                      attachment['preview_url'] as String? ??
-                          attachment['url'] as String,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          child: Icon(
+                  // contain on a muted ground: never stretched, never cropped,
+                  // the clamped aspect keeps very tall/wide media bounded.
+                  child: Container(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: Stack(fit: StackFit.expand, children: [
+                      Image(
+                          image: CachedNetworkImage(
+                              attachment['preview_url'] as String? ??
+                                  attachment['url'] as String,
+                              maxWidthPx: 900),
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Icon(
                               attachment['type'] == 'audio'
                                   ? Icons.audio_file_outlined
-                                  : Icons.image_outlined))),
+                                  : attachment['type'] == 'video'
+                                      ? Icons.videocam_outlined
+                                      : Icons.image_outlined)),
+                      if (attachment['type'] == 'video')
+                        const Center(
+                          child: Icon(Icons.play_circle_fill,
+                              size: 44, shadows: [
+                            Shadow(blurRadius: 8, color: Colors.black54)
+                          ]),
+                        ),
+                    ]),
+                  ),
                 ),
               ),
             ),
@@ -1400,13 +1592,19 @@ class _MediaPreviewState extends State<_MediaPreview> {
               icon: const Icon(Icons.open_in_new)),
         ],
       ),
-      body: widget.attachments.length == 1
-          ? _centered(_current)
-          : PageView(
-              controller: PageController(initialPage: widget.initialIndex),
-              onPageChanged: (i) => setState(() => _index = i),
-              children: [for (final attachment in widget.attachments) _centered(attachment)],
-            ),
+      body: GestureDetector(
+        // Any tap that lands outside the media itself dismisses the preview;
+        // taps on the image land on the child and are swallowed by it.
+        onTap: () => Navigator.of(context).maybePop(),
+        child: Container(color: Colors.transparent, child: widget.attachments.length == 1
+            ? _centered(_current)
+            : PageView(
+                controller: PageController(initialPage: widget.initialIndex),
+                onPageChanged: (i) => setState(() => _index = i),
+                children: [for (final attachment in widget.attachments) _centered(attachment)],
+              ),
+        ),
+      ),
     );
   }
 
@@ -1415,17 +1613,82 @@ class _MediaPreviewState extends State<_MediaPreview> {
   String get _altText =>
       (_current['description'] as String? ?? '').trim();
 
-  Widget _centered(Map<String, dynamic> attachment) => Center(
+  Widget _centered(Map<String, dynamic> attachment) {
+    final type = attachment['type'] as String? ?? 'image';
+    final src = attachment['url'] as String? ?? '';
+    if ((type == 'video' || type == 'audio') && src.isNotEmpty) {
+      return _VideoPlayerView(
+        src: src,
+        audioOnly: type == 'audio',
+        poster: attachment['preview_url'] as String?,
+      );
+    }
+    return Center(
+      child: GestureDetector(
+        // Swallow taps on the media so only background taps close.
+        onTap: () {},
         child: InteractiveViewer(
           maxScale: 4,
-          child: Image.network(
-            attachment['preview_url'] as String? ?? attachment['url'] as String,
+          child: Image(
+            image: CachedNetworkImage(
+                attachment['preview_url'] as String? ??
+                    attachment['url'] as String,
+                maxWidthPx: 1600),
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined,
                 color: Colors.white54, size: 48),
           ),
         ),
-      );
+      ),
+    );
+  }
+}
+
+/// Single shared libmpv player per preview lifecycle.
+class _VideoPlayerView extends StatefulWidget {
+  const _VideoPlayerView({required this.src, this.audioOnly = false, this.poster});
+  final String src;
+  final bool audioOnly;
+  final String? poster;
+  @override
+  State<_VideoPlayerView> createState() => _VideoPlayerViewState();
+}
+
+class _VideoPlayerViewState extends State<_VideoPlayerView> {
+  late final _player = Player();
+  late final _controller = VideoController(_player);
+  @override
+  void initState() {
+    super.initState();
+    _player.open(Media(widget.src));
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final video = Video(controller: _controller, controls: NoVideoControls);
+    final themed = MaterialVideoControlsTheme(
+      normal: _controlsTheme,
+      fullscreen: _controlsTheme,
+      child: video,
+    );
+    if (widget.audioOnly) {
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.audiotrack, size: 48, color: Colors.white54),
+        const SizedBox(height: 8),
+        SizedBox(width: 480, child: themed),
+      ]);
+    }
+    return AspectRatio(aspectRatio: 16 / 9, child: themed);
+  }
+
+  static const _controlsTheme = MaterialVideoControlsThemeData(
+      seekBarThumbColor: _green);
 }
 
 double _attachmentAspect(Map<String, dynamic> attachment) {

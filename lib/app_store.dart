@@ -56,6 +56,22 @@ class AppStore {
       ON CONFLICT(key) DO UPDATE SET value=excluded.value''', [instance]);
   }
 
+  /// UI language tag; 'system' follows the platform locale.
+  String get preferredLanguage {
+    final rows = mainDb.select("SELECT value FROM settings WHERE key='language'");
+    return rows.isEmpty ? 'system' : rows.first['value'] as String;
+  }
+
+  void setPreferredLanguage(String language) {
+    mainDb.execute('''INSERT INTO settings(key, value) VALUES ('language', ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value''', [language]);
+  }
+
+  /// Drops cached timelines; media file cache is wiped by the caller.
+  void clearCaches() {
+    cacheDb.execute('DELETE FROM statuses');
+  }
+
   void saveAccount({required String id, required String instance,
       String? username, String? displayName}) {
     mainDb.execute('''INSERT INTO accounts(id, instance, username, display_name)

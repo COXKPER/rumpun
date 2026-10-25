@@ -24,4 +24,23 @@ void main() {
         'https://cdn.example/image.jpg');
     expect(store.weight('post-1'), 3);
   });
+
+  test('language preference and cache clearing round-trip', () {
+    final store = AppStore.at((_) => ':memory:');
+    addTearDown(store.close);
+
+    expect(store.preferredLanguage, 'system');
+    store.setPreferredLanguage('id');
+    expect(store.preferredLanguage, 'id');
+
+    store.cacheStatuses('feed-0', [
+      {'id': 'p1', 'content': 'x'},
+      {'id': 'p2', 'content': 'y'},
+    ]);
+    expect(store.cachedStatuses('feed-0'), isNotEmpty);
+    store.clearCaches();
+    expect(store.cachedStatuses('feed-0'), isEmpty);
+    // Accounts/settings survive a cache wipe.
+    expect(store.preferredInstance, 'mastodon.social');
+  });
 }
