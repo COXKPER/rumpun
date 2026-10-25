@@ -13,15 +13,15 @@ class RumpunApp extends StatelessWidget {
         title: 'Rumpun',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme:
-              ColorScheme.fromSeed(seedColor: _green, brightness: Brightness.light),
+          colorScheme: ColorScheme.fromSeed(
+              seedColor: _green, brightness: Brightness.light),
           useMaterial3: true,
           fontFamily: '.SF Pro Text',
           scaffoldBackgroundColor: const Color(0xFFF7F8F6),
         ),
         darkTheme: ThemeData(
-          colorScheme:
-              ColorScheme.fromSeed(seedColor: _mint, brightness: Brightness.dark),
+          colorScheme: ColorScheme.fromSeed(
+              seedColor: _mint, brightness: Brightness.dark),
           useMaterial3: true,
           fontFamily: '.SF Pro Text',
         ),
@@ -39,16 +39,24 @@ class Post {
 }
 
 const _posts = [
-  Post('Nadia Putri', '@nadia@ruang.id',
+  Post(
+      'Nadia Putri',
+      '@nadia@ruang.id',
       'Beautiful morning for reading and sharing ideas. Hope your day is wonderful! ☀️',
       '12m'),
-  Post('Bima Santoso', '@bima@mastodon.social',
+  Post(
+      'Bima Santoso',
+      '@bima@mastodon.social',
       'Just discovered a great local community. It feels nice when the internet feels like a place of your own.',
       '34m'),
-  Post('Ayu Lestari', '@ayu@ruang.id',
+  Post(
+      'Ayu Lestari',
+      '@ayu@ruang.id',
       'Accessibility tip: add image descriptions before posting. Alt text helps more people enjoy your content.',
       '1h'),
-  Post('Citra Dewi', '@citra@ruang.id',
+  Post(
+      'Citra Dewi',
+      '@citra@ruang.id',
       'Personal reflection: sometimes we need to be quiet and listen before we speak. 🌿',
       '2h',
       contentWarning: 'Personal'),
@@ -107,7 +115,8 @@ class _RumpunShellState extends State<RumpunShell> {
       body: SafeArea(
         child: Column(children: [
           _OwnedBar(onProfile: () => _go(3)),
-          Expanded(child: Row(children: [
+          Expanded(
+              child: Row(children: [
             if (wide)
               NavigationRail(
                 extended: MediaQuery.sizeOf(context).width >= 1050,
@@ -144,7 +153,8 @@ class _RumpunShellState extends State<RumpunShell> {
               destinations: const [
                 NavigationDestination(
                     icon: Icon(Icons.home_outlined), label: 'Home'),
-                NavigationDestination(icon: Icon(Icons.search), label: 'Explore'),
+                NavigationDestination(
+                    icon: Icon(Icons.search), label: 'Explore'),
                 NavigationDestination(
                     icon: Icon(Icons.notifications_outlined),
                     label: 'Activity'),
@@ -181,7 +191,9 @@ class _OwnedBar extends StatelessWidget {
             color: Theme.of(context).colorScheme.surface,
             border: Border(
                 bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withValues(alpha: .12)))),
+                    color: Theme.of(context)
+                        .dividerColor
+                        .withValues(alpha: .12)))),
         child: Row(children: [
           Icon(Icons.hub,
               size: 19, color: Theme.of(context).colorScheme.primary),
@@ -222,7 +234,7 @@ class _ThreadSheet extends StatelessWidget {
               color: cs.surface,
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
-                BoxShadow(
+                const BoxShadow(
                     color: Colors.black26,
                     blurRadius: 24,
                     offset: const Offset(0, 12))
@@ -269,9 +281,7 @@ class _ThreadSheet extends StatelessWidget {
                     children: [
                       // Parent post with highlight
                       _ThreadPostTile(
-                          post: post,
-                          borderColor: cs.primary,
-                          borderWidth: 2),
+                          post: post, borderColor: cs.primary, borderWidth: 2),
                       const SizedBox(height: 16),
                       // Guide line
                       _buildGuideLine(context),
@@ -282,7 +292,8 @@ class _ThreadSheet extends StatelessWidget {
                               'Raka Wirawan',
                               '@raka@ruang.id',
                               'Agreed! It is wonderful to see communities sharing good things.',
-                              '8m'),
+                              '8m',
+                          ),
                           indent: true),
                     ]),
               ),
@@ -361,8 +372,7 @@ class _ThreadPostTile extends StatelessWidget {
         decoration: borderWidth > 0
             ? BoxDecoration(
                 border: Border(
-                    left: BorderSide(
-                        color: borderColor!, width: borderWidth)),
+                    left: BorderSide(color: borderColor!, width: borderWidth)),
                 borderRadius: BorderRadius.circular(12))
             : null,
         child: Card(
@@ -383,13 +393,12 @@ class _ThreadPostTile extends StatelessWidget {
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(post.name,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold)),
-                                  Text('${post.handle} · ${post.time}',
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall),
-                                ])),
+                              Text(post.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              Text('${post.handle} · ${post.time}',
+                                  style: Theme.of(context).textTheme.bodySmall),
+                            ])),
                         if (post.contentWarning != null)
                           const Icon(Icons.visibility_outlined),
                       ]),
@@ -429,6 +438,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _feed = 0;
   final _text = TextEditingController();
+
   @override
   void dispose() {
     _text.dispose();
@@ -456,109 +466,122 @@ class _HomeScreenState extends State<HomeScreen> {
                     trailing: const Icon(Icons.add),
                     onTap: _compose)),
             for (final post in _posts)
-              _PostTile(
-                  post: post,
-                  onTap: () => widget.onOpenThread(post)),
+              _PostTile(post: post, onTap: () => widget.onOpenThread(post)),
           ]),
         ),
       ]);
 
-  void _compose() => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        useSafeArea: true,
-        builder: (sheetContext) => StatefulBuilder(
-            builder: (context, setSheet) {
-          var cw = false;
-          var visibility = 'Public';
-          var hasAltText = false;
-          var hasSensitive = false;
-          return Padding(
-              padding: EdgeInsets.fromLTRB(
-                  20, 8, 20,
-                  MediaQuery.viewInsetsOf(context).bottom + 20),
-              child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Write Post',
-                        style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 12),
-                    TextField(
-                        controller: _text,
-                        autofocus: true,
-                        minLines: 3,
-                        maxLines: 6,
-                        maxLength: 500,
-                        decoration: InputDecoration(
-                            hintText: 'What do you want to share?',
-                            border: const OutlineInputBorder(),
-                            counterText: '')),
-                    if (cw)
-                      const Padding(
-                          padding: EdgeInsets.only(top: 12),
-                          child: TextField(
-                              decoration: InputDecoration(
-                                  labelText: 'Content warning',
-                                  border: OutlineInputBorder()))),
-                    const SizedBox(height: 12),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      FilterChip(
-                          label: const Text('Add CW'),
-                          selected: cw,
-                          onSelected: (v) => setSheet(() => cw = v)),
-                      DropdownButton<String>(
-                          value: visibility,
-                          items: const ['Public', 'Unlisted', 'Followers', 'Direct']
-                              .map((v) => DropdownMenuItem(
-                                  value: v, child: Text(v)))
-                              .toList(),
-                          onChanged: (v) =>
-                              setSheet(() => visibility = v!)),
-                      FilterChip(
-                          label: const Text('Sensitive'),
-                          selected: hasSensitive,
-                          onSelected: (v) =>
-                              setSheet(() => hasSensitive = v)),
-                      FilterChip(
-                          label: const Text('Has photo'),
-                          selected: hasAltText,
-                          onSelected: (v) {
-                            setSheet(() => hasAltText = v);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Add image alt text after selecting a photo')));
-                          }),
-                    ]),
-                    if (hasAltText)
-                      const Padding(
-                          padding: EdgeInsets.only(top: 12),
-                          child: TextField(
-                              decoration: InputDecoration(
-                                  labelText: 'Image description (alt text)',
-                                  border: OutlineInputBorder(),
-                                  hintText:
-                                      'Describe what is visible in the image...'))),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: FilledButton(
-                          onPressed: () {
-                            if (_text.text.trim().isEmpty) return;
-                            _text.clear();
-                            Navigator.pop(sheetContext);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content:
-                                        Text('Post added (local preview)')));
-                          },
-                          child: const Text('Send')),
-                    ),
-                  ]));
-        }),
-      );
+  void _compose() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (sheetContext) => _ComposeSheet(
+        textController: _text,
+        onDismiss: () {
+          _text.clear();
+          Navigator.pop(sheetContext);
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Post added (local preview)')));
+        },
+      ),
+    );
+  }
+}
+
+class _ComposeSheet extends StatefulWidget {
+  final TextEditingController textController;
+  final VoidCallback onDismiss;
+  const _ComposeSheet({required this.textController, required this.onDismiss});
+  @override
+  State<_ComposeSheet> createState() => _ComposeSheetState();
+}
+
+class _ComposeSheetState extends State<_ComposeSheet> {
+  bool _cw = false;
+  String _visibility = 'Public';
+  bool _hasSensitive = false;
+  bool _hasAltText = false;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 8, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+      child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Write Post', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            TextField(
+                controller: widget.textController,
+                autofocus: true,
+                minLines: 3,
+                maxLines: 6,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                    hintText: 'What do you want to share?',
+                    border: OutlineInputBorder(),
+                    counterText: '')),
+            if (_cw)
+              const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: TextField(
+                      decoration: InputDecoration(
+                          labelText: 'Content warning',
+                          border: OutlineInputBorder()))),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilterChip(
+                  label: const Text('Add CW'),
+                  selected: _cw,
+                  onSelected: (v) => setState(() => _cw = v)),
+              DropdownButton<String>(
+                  value: _visibility,
+                  items: const ['Public', 'Unlisted', 'Followers', 'Direct']
+                      .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _visibility = v!)),
+              FilterChip(
+                  label: const Text('Sensitive'),
+                  selected: _hasSensitive,
+                  onSelected: (v) => setState(() => _hasSensitive = v)),
+              FilterChip(
+                  label: const Text('Has photo'),
+                  selected: _hasAltText,
+                  onSelected: (v) {
+                    setState(() => _hasAltText = v);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text(
+                            'Add image alt text after selecting a photo')));
+                  }),
+            ]),
+            if (_hasAltText)
+              const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: TextField(
+                      decoration: InputDecoration(
+                          labelText: 'Image description (alt text)',
+                          border: OutlineInputBorder(),
+                          hintText:
+                              'Describe what is visible in the image...'))),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                  onPressed: () {
+                    if (widget.textController.text.trim().isEmpty) return;
+                    setState(() {
+                      _cw = false;
+                      _hasSensitive = false;
+                      _hasAltText = false;
+                    });
+                    widget.onDismiss();
+                  },
+                  child: const Text('Send')),
+            ),
+          ]));
 }
 
 // --- Timeline filter pills ---
@@ -585,8 +608,8 @@ class _TimelineFilter extends StatelessWidget {
         color: Theme.of(context).colorScheme.surface,
         border: Border(
           bottom: BorderSide(
-            color: (isDark ? Colors.white : Colors.black)
-                .withValues(alpha: .05),
+            color:
+                (isDark ? Colors.white : Colors.black).withValues(alpha: .05),
           ),
         ),
       ),
@@ -610,9 +633,8 @@ class _TimelineFilter extends StatelessWidget {
                     Text(
                       options[i],
                       style: TextStyle(
-                        fontWeight: selected == i
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        fontWeight:
+                            selected == i ? FontWeight.bold : FontWeight.normal,
                         color: selected == i ? _green : inactiveColor,
                       ),
                     ),
@@ -662,8 +684,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             a.handle.toLowerCase().contains(q);
       }).toList();
 
-  List<_SearchResultPost> get _postMatches =>
-      _searchResultsPosts.where((p) {
+  List<_SearchResultPost> get _postMatches => _searchResultsPosts.where((p) {
         final q = _query.toLowerCase();
         return p.title.toLowerCase().contains(q) ||
             p.handle.toLowerCase().contains(q);
@@ -684,10 +705,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         if (_showResults) ...[
           Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Text(
-                  _query.isEmpty
-                      ? ''
-                      : 'Results for "$_query"',
+              child: Text(_query.isEmpty ? '' : 'Results for "$_query"',
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall
@@ -695,8 +713,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           if (_category == 'Accounts' && _accountMatches.isNotEmpty) ...[
             for (final a in _accountMatches)
               ListTile(
-                  leading: CircleAvatar(
-                      child: Text(a.name.characters.first)),
+                  leading: CircleAvatar(child: Text(a.name.characters.first)),
                   title: Text(a.name),
                   subtitle: Text(a.handle),
                   trailing: OutlinedButton(
@@ -721,15 +738,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                for (final cat
-                    in const ['Hashtags', 'Accounts', 'Posts'])
+                for (final cat in const ['Hashtags', 'Accounts', 'Posts'])
                   Padding(
                       padding: const EdgeInsets.only(left: 20, right: 12),
                       child: ChoiceChip(
                           label: Text(cat),
                           selected: _category == cat,
-                          onSelected: (_) =>
-                              setState(() => _category = cat))),
+                          onSelected: (_) => setState(() => _category = cat))),
               ],
             ),
           ),
@@ -738,8 +753,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text('Trending hashtags',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold)))),
+                      style: TextStyle(fontWeight: FontWeight.bold)))),
           Expanded(
             child: ListView(children: [
               for (final tag in _trendingHashtags)
@@ -752,8 +766,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               const Divider(),
               for (final a in _searchResultsAccounts)
                 ListTile(
-                    leading: CircleAvatar(
-                        child: Text(a.name.characters.first)),
+                    leading: CircleAvatar(child: Text(a.name.characters.first)),
                     title: Text(a.name),
                     subtitle: Text(a.handle),
                     trailing: OutlinedButton(
@@ -790,15 +803,13 @@ class _ActivityScreenState extends State<ActivityScreen> {
         const _PageTitle(title: 'Activity'),
         Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('All')),
-                  ButtonSegment(value: 1, label: Text('Mentions')),
-                  ButtonSegment(value: 2, label: Text('Likes')),
-                ],
-                selected: {filter},
-                onSelectionChanged: (v) =>
-                    setState(() => filter = v.first))),
+            child: SegmentedButton<int>(segments: const [
+              ButtonSegment(value: 0, label: Text('All')),
+              ButtonSegment(value: 1, label: Text('Mentions')),
+              ButtonSegment(value: 2, label: Text('Likes')),
+            ], selected: {
+              filter
+            }, onSelectionChanged: (v) => setState(() => filter = v.first))),
         Expanded(
           child: ListView(children: const [
             ListTile(
@@ -806,8 +817,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 title: Text('Raka replied to your post'),
                 subtitle: Text(
                     'Agreed! It is wonderful to see communities sharing good things. · 8m'),
-                trailing: Icon(Icons.mode_comment_outlined,
-                    color: Colors.blue)),
+                trailing:
+                    Icon(Icons.mode_comment_outlined, color: Colors.blue)),
             ListTile(
                 leading: CircleAvatar(child: Text('A')),
                 title: Text('Ayu liked your post'),
@@ -861,14 +872,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: TextStyle(color: Color(0xFF9AA4A0)),
               textAlign: TextAlign.center),
           const SizedBox(height: 16),
-          const Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 20,
-              children: [
-                Text('24 Following'),
-                Text('128 Followers'),
-                Text('36 Posts'),
-              ]),
+          const Wrap(alignment: WrapAlignment.center, spacing: 20, children: [
+            Text('24 Following'),
+            Text('128 Followers'),
+            Text('36 Posts'),
+          ]),
           const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 8),
@@ -891,12 +899,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       case 2:
         return const Padding(
             padding: EdgeInsets.all(32),
-            child: Center(
-                child: Text('Media you upload will appear here')));
+            child: Center(child: Text('Media you upload will appear here')));
       default:
         return Column(children: [
-          for (final post in _posts)
-            _PostTile(post: post, onTap: () {}),
+          for (final post in _posts) _PostTile(post: post, onTap: () {}),
         ]);
     }
   }
@@ -914,25 +920,24 @@ class _ProfileTabBar extends StatelessWidget {
           Expanded(
               child: Center(
                   child: Column(children: [
-                InkWell(
-                    onTap: () => onTap(i),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Text(tabs[i],
-                            style: TextStyle(
-                                fontWeight: selected == i
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: selected == i ? _green : null)))),
-                if (selected == i)
-                  Container(
-                      height: 3,
-                      width: 32,
-                      decoration: BoxDecoration(
-                          color: _green,
-                          borderRadius: BorderRadius.circular(2))),
-              ]))),
+            InkWell(
+                onTap: () => onTap(i),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(tabs[i],
+                        style: TextStyle(
+                            fontWeight: selected == i
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: selected == i ? _green : null)))),
+            if (selected == i)
+              Container(
+                  height: 3,
+                  width: 32,
+                  decoration: BoxDecoration(
+                      color: _green, borderRadius: BorderRadius.circular(2))),
+          ]))),
       ]);
 }
 
@@ -991,14 +996,13 @@ class _PostTileState extends State<_PostTile> {
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(widget.post.name,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold)),
-                                  Text(
-                                      '${widget.post.handle} · ${widget.post.time}',
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall),
-                                ])),
+                              Text(widget.post.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              Text(
+                                  '${widget.post.handle} · ${widget.post.time}',
+                                  style: Theme.of(context).textTheme.bodySmall),
+                            ])),
                         const Icon(Icons.more_horiz),
                       ]),
                       if (hasCW && !reveal) ...[

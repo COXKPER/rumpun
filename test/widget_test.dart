@@ -49,6 +49,11 @@ void main() {
     expect(find.text('Sensitive'), findsOneWidget);
     expect(find.text('Has photo'), findsOneWidget);
 
+    // Toggle CW - should show the CW TextField
+    await tester.tap(find.text('Add CW'));
+    await tester.pumpAndSettle();
+    expect(find.text('Content warning'), findsOneWidget);
+
     // Close by tapping outside
     await tester.tapAt(const Offset(12, 12));
     await tester.pumpAndSettle();
