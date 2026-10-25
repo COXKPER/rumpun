@@ -12,7 +12,7 @@
 3. **Experienced Fediverse Users:** Full control over Content Warnings (CW), 4 levels of post visibility, accessible alt-text for media, and multi-server switching.
 
 ### Design Principles
-- **Zero-Jargon Interface:** No complex terms in the main UI. Use "Server" instead of "Instance", "Repost" instead of "Boost", "Content Warning" instead of "CW", and "Post" instead of "Toot".
+- **Zero-Jargon Interface:** No complex terms in the main UI. Use "Server" instead of "Instance", "Repost" instead of "Boost", "Spoiler" instead of "CW", and "Post" instead of "Toot".
 - **App-Owned Modern Chrome:** Replace separate system status bar with an integrated app header (*owned chrome*) 46px tall, seamlessly blending with the canvas background.
 - **Minimalist Cupertino Typography:** Use Apple SF Pro Text font family (`.SF Pro Text`) with tight tracking, calm hierarchy, and smooth fallback to native Linux fonts (Cantarell, Inter, Roboto).
 - **Spatial Breadcrumb Navigation:** Adaptive navigation rail on desktop (width >= 760px) and bottom navigation bar on compact viewports (< 760px).
@@ -99,6 +99,6 @@ The application has 4 main screens and 2 interactive modal sheets:
 ## 5. Acceptance Criteria
 1. All four screens (Home, Search, Activity, Profile) are accessible and navigable.
 2. Timeline filters (Following / Local / Federated) respond to taps.
-3. The interactive composer displays CW, Visibility, and Alt-Text options.
+3. The interactive composer displays Spoiler, Visibility, and Alt-Text options.
 4. Thread modal can be opened to read deep conversations.
 5. All workflows validated via automated `flutter test` suite.

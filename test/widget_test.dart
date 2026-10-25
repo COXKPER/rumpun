@@ -34,7 +34,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('opens compose modal with CW, visibility, and alt text',
+  testWidgets('opens compose modal with spoiler, visibility, and alt text',
       (tester) async {
     tester.view.physicalSize = const Size(400, 1100);
     tester.view.devicePixelRatio = 1;
@@ -44,20 +44,20 @@ void main() {
 
     await tester.tap(find.text('What do you want to share?'));
     await tester.pumpAndSettle();
-    expect(find.text('Write Post'), findsOneWidget);
-    expect(find.text('Add CW'), findsOneWidget);
+    expect(find.text('Post'), findsOneWidget);
+    expect(find.text('Add Spoiler'), findsOneWidget);
     expect(find.text('Sensitive'), findsOneWidget);
     expect(find.text('Has photo'), findsOneWidget);
 
-    // Toggle CW - should show the CW TextField
-    await tester.tap(find.text('Add CW'));
+    // Toggle spoiler - should show the Spoiler TextField
+    await tester.tap(find.text('Add Spoiler'));
     await tester.pumpAndSettle();
-    expect(find.text('Content warning'), findsOneWidget);
+    expect(find.text('Spoiler'), findsOneWidget);
 
     // Close by tapping outside
     await tester.tapAt(const Offset(12, 12));
     await tester.pumpAndSettle();
-    expect(find.text('Write Post'), findsNothing);
+    expect(find.text('Post'), findsNothing);
   });
 
   testWidgets('search bar filters results', (tester) async {
@@ -83,22 +83,22 @@ void main() {
     expect(find.text('Nadia Putri'), findsOneWidget);
   });
 
-  testWidgets('collapses and reveals content warning posts', (tester) async {
+  testWidgets('collapses and reveals spoiler posts', (tester) async {
     tester.view.physicalSize = const Size(400, 1100);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const RumpunApp());
 
-    // Ensure the CW post is visible (it's below the fold)
+    // Ensure the spoiler post is visible (it's below the fold)
     await tester.ensureVisible(find.text('Citra Dewi'));
     await tester.pumpAndSettle();
 
-    // The CW post should show warning button
-    expect(find.text('View post'), findsOneWidget);
+    // The spoiler post should show warning button
+    expect(find.text('View reply'), findsOneWidget);
 
     // Tap to reveal
-    await tester.tap(find.text('View post'));
+    await tester.tap(find.text('View reply'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Personal reflection'), findsOneWidget);
   });
@@ -110,7 +110,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const RumpunApp());
 
-    // Tap the first post (Nadia Putri) which has no CW
+    // Tap the first post (Nadia Putri) which has no spoiler
     await tester.tap(find.textContaining('Beautiful morning').first);
     await tester.pumpAndSettle();
 

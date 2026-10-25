@@ -490,6 +490,11 @@ class _ThreadPostTile extends StatelessWidget {
                             iconSize: 20,
                             onPressed: () {},
                             icon: const Icon(Icons.repeat)),
+                        IconButton(
+                            tooltip: 'Share',
+                            iconSize: 20,
+                            onPressed: () {},
+                            icon: const Icon(Icons.share_outlined)),
                       ]),
                     ]))),
       );
@@ -581,7 +586,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Write Post', style: Theme.of(context).textTheme.titleLarge),
+            Text('Post', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             TextField(
                 controller: widget.textController,
@@ -598,12 +603,12 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                   padding: EdgeInsets.only(top: 12),
                   child: TextField(
                       decoration: InputDecoration(
-                          labelText: 'Content warning',
+                          labelText: 'Spoiler',
                           border: OutlineInputBorder()))),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
               FilterChip(
-                  label: const Text('Add CW'),
+                  label: const Text('Add Spoiler'),
                   selected: _cw,
                   onSelected: (v) => setState(() => _cw = v)),
               DropdownButton<String>(
@@ -1089,14 +1094,14 @@ class _PostTileState extends State<_PostTile> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                                'Content Warning: ${widget.post.contentWarning}',
+                                'Spoiler: ${widget.post.contentWarning}',
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w600)),
                           ),
                         ]),
                         TextButton(
                             onPressed: () => setState(() => _reveal = true),
-                            child: const Text('View post')),
+                            child: const Text('View reply')),
                       ] else ...[
                         const SizedBox(height: 8),
                         Text(widget.post.text),
@@ -1114,6 +1119,10 @@ class _PostTileState extends State<_PostTile> {
                               tooltip: 'Repost',
                               onPressed: () {},
                               icon: const Icon(Icons.repeat)),
+                          IconButton(
+                              tooltip: 'Share',
+                              onPressed: () {},
+                              icon: const Icon(Icons.share_outlined)),
                         ]),
                       ],
                     ]))));
