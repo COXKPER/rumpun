@@ -1,156 +1,108 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'app_store.dart';
+import 'fediverse_api.dart';
+import 'oauth_callback.dart';
 
 void main() => runApp(const RumpunApp());
 
 const _green = Color(0xFF236B55);
-const _mint = Color(0xFF83C9AE);
-const _localInstance = 'ruang.id';
+FediverseApi? _activeApi;
+AppStore? _appStore;
+Map<String, dynamic>? _currentAccount;
+String? _currentAccountId;
+String _instance = 'mastodon.social';
 
-/// Splits a federated handle like @user@instance.com into (username, instance).
-/// Returns null if the handle doesn't follow the @user@instance format.
-(String, String)? parseHandle(String handle) {
-  final parts = handle.startsWith('@') ? handle.substring(1).split('@') : handle.split('@');
-  if (parts.length == 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
-    return (parts[0], parts[1]);
-  }
-  return null;
-}
-
-/// Displays a federated handle as @username, like mainstream social media.
-/// Local instance handles show just @username. Cross-instance handles show
-/// @username with the remote server name to prove they are not from ruang.id.
-/// ponytail: no real favicon fetch yet; uses a simplified labeled chip.
-class _HandleDisplay extends StatelessWidget {
-  const _HandleDisplay({required this.handle});
-  final String handle;
-
+class RumpunApp extends StatefulWidget {
+  const RumpunApp({super.key, this.api, this.store});
+  final FediverseApi? api;
+  final AppStore? store;
   @override
-  Widget build(BuildContext context) {
-    final parsed = parseHandle(handle);
-    if (parsed == null) {
-      // Fallback: show the raw handle as-is.
-      return Text(handle,
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
-    }
-    final (username, instance) = parsed;
-    if (instance == _localInstance) {
-      // Local instance: just show @username, no server indicator.
-      return Text('@$username',
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
-    }
-    // Cross-instance: show @username with a subtle server chip.
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Text('@$username',
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      const SizedBox(width: 6),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(children: [
-          Icon(Icons.language,
-              size: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Text(instance,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontSize: 11,
-                  )),
-        ]),
-      ),
-    ]);
-  }
+  State<RumpunApp> createState() => _RumpunAppState();
 }
 
-class RumpunApp extends StatelessWidget {
-  const RumpunApp({super.key});
+class _RumpunAppState extends State<RumpunApp> {
+  bool _ready = false;
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    final store = widget.store ?? await AppStore.open();
+    _appStore = store;
+    _instance = store.preferredInstance;
+    if (widget.api != null) {
+      _activeApi = widget.api;
+      if (mounted) setState(() => _ready = true);
+      return;
+    }
+    final accounts = store.accounts();
+    if (accounts.isNotEmpty) {
+      final saved = accounts.first;
+      final api = FediverseApi(saved['instance'] as String);
+      try {
+        await api.restoreToken(saved['id'] as String);
+        final account = await api.currentUser();
+        _currentAccountId = saved['id'] as String;
+        _currentAccount = account;
+        _activeApi = api;
+      } catch (_) {
+        api.close();
+        _activeApi = FediverseApi(_instance);
+      }
+    } else {
+      _activeApi = FediverseApi(_instance);
+    }
+    if (mounted) setState(() => _ready = true);
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Rumpun',
+        title: 'Fediverse',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-              seedColor: _green, brightness: Brightness.light),
+          colorScheme: ColorScheme.fromSeed(seedColor: _green),
           useMaterial3: true,
-          fontFamily: '.SF Pro Text',
-          scaffoldBackgroundColor: const Color(0xFFF7F8F6),
+          scaffoldBackgroundColor: const Color(0xFFFAFAF8),
+          cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
         ),
         darkTheme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
-              seedColor: _mint, brightness: Brightness.dark),
+              seedColor: _green, brightness: Brightness.dark),
           useMaterial3: true,
-          fontFamily: '.SF Pro Text',
         ),
-        home: const RumpunShell(),
+        home: _ready ? const RumpunShell() : const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
       );
 }
 
-// --- Domain models ---
-
 class Post {
-  final String name, handle, text, time, avatar;
-  final String? contentWarning;
-  const Post(this.name, this.handle, this.text, this.time,
-      {this.avatar = '', this.contentWarning});
+  const Post(this.status, this.instance);
+  final Map<String, dynamic> status;
+  final String instance;
+
+  Map<String, dynamic> get data =>
+      status['reblog'] as Map<String, dynamic>? ?? status;
+  Map<String, dynamic> get account =>
+      data['account'] as Map<String, dynamic>? ?? {};
+  String get id => data['id'] as String? ?? '';
+  String get acct => account['acct'] as String? ?? 'unknown';
+  String get handle => acct.contains('@') ? '@$acct' : '@$acct@$instance';
+  String get name => (account['display_name'] as String?)?.isNotEmpty == true
+      ? account['display_name'] as String
+      : account['username'] as String? ?? acct;
+  String get content => data['content'] as String? ?? '';
 }
-
-const _posts = [
-  Post(
-      'Nadia Putri',
-      '@nadia@ruang.id',
-      'Beautiful morning for reading and sharing ideas. Hope your day is wonderful! ☀️',
-      '12m'),
-  Post(
-      'Bima Santoso',
-      '@bima@mastodon.social',
-      'Just discovered a great local community. It feels nice when the internet feels like a place of your own.',
-      '34m'),
-  Post(
-      'Ayu Lestari',
-      '@ayu@ruang.id',
-      'Accessibility tip: add image descriptions before posting. Alt text helps more people enjoy your content.',
-      '1h'),
-  Post(
-      'Citra Dewi',
-      '@citra@ruang.id',
-      'Personal reflection: sometimes we need to be quiet and listen before we speak. 🌿',
-      '2h',
-      contentWarning: 'Personal'),
-];
-
-const _trendingHashtags = [
-  'Linux',
-  'Photography',
-  'Fediverse',
-  'Design',
-  'Books',
-];
-
-const _searchResultsAccounts = [
-  _SearchResultAccount('Nadia Putri', '@nadia@ruang.id'),
-  _SearchResultAccount('Bima Santoso', '@bima@mastodon.social'),
-];
-
-const _searchResultsPosts = [
-  _SearchResultPost('flutter tips for desktop', '@dev@ruang.id'),
-  _SearchResultPost('open source community', '@dev@ruang.id'),
-];
-
-class _SearchResultAccount {
-  final String name, handle;
-  const _SearchResultAccount(this.name, this.handle);
-}
-
-class _SearchResultPost {
-  final String title, handle;
-  const _SearchResultPost(this.title, this.handle);
-}
-
-// --- Root shell with navigation ---
 
 class RumpunShell extends StatefulWidget {
   const RumpunShell({super.key});
@@ -160,709 +112,702 @@ class RumpunShell extends StatefulWidget {
 
 class _RumpunShellState extends State<RumpunShell> {
   int _page = 0;
-  void _go(int page) => setState(() => _page = page);
-
+  Map<String, dynamic>? _profileAccount;
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 760;
-    final screens = [
-      HomeScreen(onOpenThread: (post) => _openThread(post)),
-      const ExploreScreen(),
+    final pages = [
+      HomeScreen(onOpenProfile: _openProfile),
+      ExploreScreen(onOpenProfile: _openProfile),
       const ActivityScreen(),
-      const ProfileScreen(),
+      _profileAccount == null
+          ? ProfileScreen(account: _currentAccount, accountId: _currentAccountId,
+              onOpenProfile: _openProfile)
+          : ProfileScreen(account: _profileAccount,
+              onOpenProfile: _openProfile),
     ];
     return Scaffold(
       body: SafeArea(
         child: Column(children: [
-          _OwnedBar(onProfile: () => _go(3)),
+          _TopBar(onAccount: _openAccount, onSettings: _settings),
           Expanded(
-              child: Row(children: [
-            if (wide)
-              NavigationRail(
-                extended: MediaQuery.sizeOf(context).width >= 1050,
-                selectedIndex: _page,
-                onDestinationSelected: _go,
-                destinations: const [
-                  NavigationRailDestination(
-                      icon: Icon(Icons.home_outlined), label: Text('Home')),
-                  NavigationRailDestination(
-                      icon: Icon(Icons.search), label: Text('Explore')),
-                  NavigationRailDestination(
-                      icon: Icon(Icons.notifications_outlined),
-                      label: Text('Activity')),
-                  NavigationRailDestination(
-                      icon: Icon(Icons.person_outline), label: Text('Profile')),
-                ],
-              ),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: screens[_page],
+            child: Row(children: [
+              if (wide)
+                NavigationRail(
+                  selectedIndex: _page,
+                  onDestinationSelected: (i) => setState(() {
+                    _page = i;
+                    if (i != 3) _profileAccount = null;
+                  }),
+                  destinations: const [
+                    NavigationRailDestination(
+                        icon: Icon(Icons.home_outlined), label: Text('Home')),
+                    NavigationRailDestination(
+                        icon: Icon(Icons.search), label: Text('Explore')),
+                    NavigationRailDestination(
+                        icon: Icon(Icons.notifications_none), label: Text('Notifications')),
+                    NavigationRailDestination(
+                        icon: Icon(Icons.person_outline), label: Text('Account')),
+                  ],
+                ),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 780),
+                    child: pages[_page],
+                  ),
                 ),
               ),
-            ),
-          ])),
+            ]),
+          ),
         ]),
       ),
       bottomNavigationBar: wide
           ? null
           : NavigationBar(
               selectedIndex: _page,
-              onDestinationSelected: _go,
+              onDestinationSelected: (i) => setState(() {
+                _page = i;
+                if (i != 3) _profileAccount = null;
+              }),
               destinations: const [
                 NavigationDestination(
                     icon: Icon(Icons.home_outlined), label: 'Home'),
+                NavigationDestination(icon: Icon(Icons.search), label: 'Explore'),
                 NavigationDestination(
-                    icon: Icon(Icons.search), label: 'Explore'),
+                    icon: Icon(Icons.notifications_none), label: 'Notifications'),
                 NavigationDestination(
-                    icon: Icon(Icons.notifications_outlined),
-                    label: 'Activity'),
-                NavigationDestination(
-                    icon: Icon(Icons.person_outline), label: 'Profile'),
+                    icon: Icon(Icons.person_outline), label: 'Account'),
               ],
             ),
     );
   }
 
-  void _openThread(Post post) {
-    showGeneralDialog<void>(
-      context: context,
-      barrierColor: Colors.black54,
-      barrierDismissible: true,
-      barrierLabel: 'Close',
-      transitionBuilder: (context, anim, _, child) =>
-          FadeTransition(opacity: anim, child: child),
-      pageBuilder: (context, anim, _) => _ThreadSheet(post: post),
-    );
+  Future<void> _openProfile(String acct) async {
+    final api = _activeApi;
+    if (api == null) return;
+    try {
+      final result = await api.lookupAccount(acct);
+      if (!mounted) return;
+      setState(() {
+        _profileAccount = result;
+        _page = 3;
+      });
+    } catch (error) {
+      if (mounted) _message('Could not load profile: $error');
+    }
   }
+
+  void _openAccount() {
+    if (_currentAccount != null) {
+      setState(() {
+        _profileAccount = _currentAccount;
+        _page = 3;
+      });
+    } else {
+      _login();
+    }
+  }
+
+  Future<void> _login() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _ConnectDialog(instance: _instance),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _settings() async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _InstanceSettingsDialog(instance: _instance),
+    );
+    if (!mounted) return;
+    if (value == null || value.isEmpty) return;
+    try {
+      final next = FediverseApi(value);
+      _instance = next.instance.host;
+      _appStore?.setPreferredInstance(_instance);
+      if (_currentAccount == null) {
+        _activeApi?.close();
+        _activeApi = next;
+      } else {
+        next.close();
+      }
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _message('Invalid server address: $error');
+    }
+  }
+
+  Future<void> _logout() async {
+    final api = _activeApi;
+    final id = _currentAccountId;
+    if (api != null && id != null) await api.deleteToken(id);
+    _appStore?.deleteAccount(id ?? '');
+    api?.close();
+    _currentAccount = null;
+    _currentAccountId = null;
+    _activeApi = FediverseApi(_instance);
+    if (mounted) {
+      setState(() {
+        _page = 0;
+        _profileAccount = null;
+      });
+    }
+  }
+
+  void _message(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  Future<void> _settingsFromMenu() => _settings();
 }
 
-// --- App-owned chrome ---
+class _InstanceSettingsDialog extends StatefulWidget {
+  const _InstanceSettingsDialog({required this.instance});
+  final String instance;
 
-class _OwnedBar extends StatelessWidget {
-  final VoidCallback onProfile;
-  const _OwnedBar({required this.onProfile});
   @override
-  Widget build(BuildContext context) => Container(
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 22),
-        decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-                bottom: BorderSide(
-                    color: Theme.of(context)
-                        .dividerColor
-                        .withValues(alpha: .12)))),
+  State<_InstanceSettingsDialog> createState() => _InstanceSettingsDialogState();
+}
+
+class _InstanceSettingsDialogState extends State<_InstanceSettingsDialog> {
+  late final _controller = TextEditingController(text: widget.instance);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Settings'),
+        content: TextField(
+          controller: _controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Default instance'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      );
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.onAccount, required this.onSettings});
+  final VoidCallback onAccount;
+  final VoidCallback onSettings;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
         child: Row(children: [
-          Icon(Icons.hub,
-              size: 19, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 9),
-          Text('rumpun',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700)),
-          const Spacer(),
-          const Icon(Icons.circle, size: 8, color: Color(0xFF38A979)),
-          const SizedBox(width: 7),
-          const Text('ruang.id'),
-          const SizedBox(width: 12),
-          InkWell(
-              onTap: onProfile,
-              borderRadius: BorderRadius.circular(14),
-              child: const CircleAvatar(
-                  radius: 13, child: Text('K', style: TextStyle(fontSize: 11))))
+          const Icon(Icons.public, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(_activeApi?.instance.host ?? _instance,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+              tooltip: _currentAccount == null ? 'Log in' : 'My account',
+              onPressed: onAccount,
+              icon: _currentAccount == null
+                  ? const Icon(Icons.account_circle_outlined)
+                  : CircleAvatar(
+                      radius: 14,
+                      backgroundImage: ResizeImage(
+                          NetworkImage(_currentAccount!['avatar'] as String? ?? ''),
+                          width: 56, height: 56, allowUpscaling: false),
+                      onBackgroundImageError: (_, __) {},
+                    ),
+          ),
+          IconButton(
+              tooltip: 'Settings',
+              onPressed: onSettings,
+              icon: const Icon(Icons.settings_outlined)),
         ]),
       );
 }
 
-// --- Thread conversation sheet ---
+class _OAuthCancelled implements Exception {}
 
-class _ThreadSheet extends StatelessWidget {
-  final Post post;
-  const _ThreadSheet({required this.post});
+class _ComposeSheet extends StatefulWidget {
+  const _ComposeSheet({required this.onPosted});
+  final Future<void> Function() onPosted;
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 520),
-          decoration: BoxDecoration(
-              color: cs.surface,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: const [
-                BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 24,
-                    offset: Offset(0, 12))
-              ]),
-          child: Column(children: [
-            // Drag indicator
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 8),
-              child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .textTheme
-                          .bodyMedium!
-                          .color!
-                          .withValues(alpha: .24),
-                      borderRadius: BorderRadius.circular(2))),
-            ),
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
-              child: Row(children: [
-                const Icon(Icons.forum_outlined),
-                const SizedBox(width: 8),
-                Text('Conversation',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context)),
-              ]),
-            ),
-            const Divider(height: 1),
-            // Conversation content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Parent post with highlight
-                      _ThreadPostTile(
-                          post: post, borderColor: cs.primary, borderWidth: 2),
-                      const SizedBox(height: 16),
-                      // Guide line
-                      _buildGuideLine(context),
-                      const SizedBox(height: 12),
-                      // Reply
-                      const _ThreadPostTile(
-                          post: Post(
-                              'Raka Wirawan',
-                              '@raka@ruang.id',
-                              'Agreed! It is wonderful to see communities sharing good things.',
-                              '8m'),
-                          indent: true),
-                    ]),
-              ),
-            ),
-            // Reply composer
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-              decoration: BoxDecoration(
-                  border: Border(
-                      top: BorderSide(
-                          color: Theme.of(context)
-                              .dividerColor
-                              .withValues(alpha: .08)))),
-              child: Row(children: [
-                const CircleAvatar(radius: 14, child: Text('K')),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                        hintText: 'Type a reply...',
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide.none),
-                        filled: true,
-                        fillColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: .3)),
-                  ),
-                ),
-              ]),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGuideLine(BuildContext context) => Padding(
-      padding: const EdgeInsets.only(left: 26),
-      child: Column(children: [
-        Container(
-            width: 2,
-            height: 24,
-            color: Theme.of(context)
-                .textTheme
-                .bodyMedium!
-                .color!
-                .withValues(alpha: .12)),
-        Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Theme.of(context)
-                    .textTheme
-                    .bodyMedium!
-                    .color!
-                    .withValues(alpha: .24))),
-      ]));
+  State<_ComposeSheet> createState() => _ComposeSheetState();
 }
 
-class _ThreadPostTile extends StatelessWidget {
-  final Post post;
-  final bool indent;
-  final double borderWidth;
-  final Color? borderColor;
-  const _ThreadPostTile(
-      {required this.post,
-      this.indent = false,
-      this.borderWidth = 0,
-      this.borderColor});
+class _ComposeSheetState extends State<_ComposeSheet> {
+  final _text = TextEditingController();
+  final _spoiler = TextEditingController();
+  bool _posting = false;
+  String? _error;
   @override
-  Widget build(BuildContext context) => Container(
-        margin: EdgeInsets.only(left: indent ? 24 : 0),
-        decoration: borderWidth > 0
-            ? BoxDecoration(
-                border: Border(
-                    left: BorderSide(color: borderColor!, width: borderWidth)),
-                borderRadius: BorderRadius.circular(12))
-            : null,
-        child: Card(
-            elevation: 0,
-            child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        CircleAvatar(
-                            radius: 14,
-                            child: Text(post.avatar.isEmpty
-                                ? post.name.characters.first
-                                : post.avatar)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                              Text(post.name,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _HandleDisplay(handle: post.handle),
-                                    const SizedBox(width: 8),
-                                    Text(' · ${post.time}',
-                                        style: Theme.of(context).textTheme.bodySmall),
-                                  ],
-                                ),
-                              ),
-                            ])),
-                        if (post.contentWarning != null)
-                          const Icon(Icons.visibility_outlined),
-                      ]),
-                      const SizedBox(height: 10),
-                      Text(post.text),
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        IconButton(
-                            tooltip: 'Reply',
-                            iconSize: 20,
-                            onPressed: () {},
-                            icon: const Icon(Icons.mode_comment_outlined)),
-                        IconButton(
-                            tooltip: 'Like',
-                            iconSize: 20,
-                            onPressed: () {},
-                            icon: const Icon(Icons.favorite_border)),
-                        IconButton(
-                            tooltip: 'Repost',
-                            iconSize: 20,
-                            onPressed: () {},
-                            icon: const Icon(Icons.repeat)),
-                        IconButton(
-                            tooltip: 'Share',
-                            iconSize: 20,
-                            onPressed: () {},
-                            icon: const Icon(Icons.share_outlined)),
-                      ]),
-                    ]))),
+  void initState() {
+    super.initState();
+    _text.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _spoiler.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final content = _text.text.trim();
+    if (content.isEmpty || _posting) return;
+    setState(() {
+      _posting = true;
+      _error = null;
+    });
+    try {
+      await _activeApi!.post(content, spoilerText: _spoiler.text);
+      _text.clear();
+      _spoiler.clear();
+      await widget.onPosted();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _posting = false;
+          _error = '$error';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            20, 16, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('New post', style: Theme.of(context).textTheme.titleMedium),
+            const Spacer(),
+            IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close)),
+          ]),
+          const SizedBox(height: 4),
+          TextField(
+              controller: _text,
+              autofocus: true,
+              minLines: 4,
+              maxLines: 8,
+              maxLength: 500,
+              decoration:
+                  const InputDecoration(hintText: 'Write a post', border: OutlineInputBorder())),
+          TextField(
+              controller: _spoiler,
+              decoration: const InputDecoration(
+                  hintText: 'Content warning (optional)',
+                  border: OutlineInputBorder())),
+          if (_error != null)
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: _text.text.trim().isEmpty || _posting ? null : _submit,
+              child: Text(_posting ? 'Posting…' : 'Post'),
+            ),
+          ),
+        ]),
       );
 }
 
-// --- Home / Timeline screen ---
+class _ConnectDialog extends StatefulWidget {
+  const _ConnectDialog({required this.instance});
+  final String instance;
+  @override
+  State<_ConnectDialog> createState() => _ConnectDialogState();
+}
+
+class _ConnectDialogState extends State<_ConnectDialog> {
+  late final _instanceController = TextEditingController(text: widget.instance);
+  bool _busy = false;
+  String? _error;
+  Completer<void>? _cancelOAuth;
+  @override
+  void dispose() {
+    _instanceController.dispose();
+    super.dispose();
+  }
+
+  void _cancel() {
+    if (_busy) {
+      if (!(_cancelOAuth?.isCompleted ?? true)) _cancelOAuth!.complete();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _connect() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    _cancelOAuth = Completer<void>();
+    final api = FediverseApi(_instanceController.text.trim());
+    HttpServer? server;
+    AppStore? store;
+    try {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final redirectUri = 'http://127.0.0.1:${server.port}/oauth/callback';
+      final random = Random.secure();
+      final state = base64Url
+          .encode(List<int>.generate(32, (_) => random.nextInt(256)))
+          .replaceAll('=', '');
+      final callback = receiveOAuthCode(server, state);
+      final app = await api.registerApp(redirectUri);
+      final clientId = app['client_id'] as String?;
+      final clientSecret = app['client_secret'] as String?;
+      if (clientId == null || clientSecret == null) {
+        throw const FormatException('The server did not return OAuth app credentials.');
+      }
+      if (!await launchUrl(
+          api.authorizationUri(
+              clientId: clientId, redirectUri: redirectUri, state: state),
+          mode: LaunchMode.externalApplication)) {
+        throw StateError('Could not open the system browser.');
+      }
+      final code = await Future.any([
+        callback.timeout(const Duration(minutes: 5),
+            onTimeout: () => throw TimeoutException('Authorization timed out.')),
+        _cancelOAuth!.future.then<String>((_) => throw _OAuthCancelled()),
+      ]);
+      await api.exchangeCode(
+          clientId: clientId,
+          clientSecret: clientSecret,
+          code: code,
+          redirectUri: redirectUri);
+      final account = await api.currentUser();
+      final accountId = account['id'];
+      if (accountId == null) throw const FormatException('The server returned no account ID.');
+      final id = '$accountId@${api.instance.host}';
+      await api.saveToken(id);
+      store = _appStore ?? await AppStore.open();
+      store.saveAccount(
+          id: id,
+          instance: api.instance.toString(),
+          username: account['username'] as String?,
+          displayName: account['display_name'] as String?);
+      final oldApi = _activeApi;
+      _activeApi = api;
+      _appStore = store;
+      _currentAccount = account;
+      _currentAccountId = id;
+      store.setPreferredInstance(api.instance.host);
+      _instanceController.text = api.instance.host;
+      _instance = api.instance.host;
+      oldApi?.close();
+      if (mounted) Navigator.pop(context);
+    } on _OAuthCancelled {
+      api.close();
+    } catch (error) {
+      store?.close();
+      api.close();
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      await server?.close(force: true);
+      _cancelOAuth = null;
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Log in'),
+        content: SizedBox(
+          width: 360,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Choose your home server. Authorization opens in your browser.'),
+            const SizedBox(height: 12),
+            TextField(
+                controller: _instanceController,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(labelText: 'Instance')),
+            if (_error != null)
+              Text(_error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: _cancel, child: const Text('Cancel')),
+          FilledButton(
+              onPressed: _busy ? null : _connect,
+              child: Text(_busy ? 'Waiting…' : 'Continue')),
+        ],
+      );
+}
 
 class HomeScreen extends StatefulWidget {
-  final ValueChanged<Post> onOpenThread;
-  const HomeScreen({super.key, required this.onOpenThread});
+  const HomeScreen({super.key, required this.onOpenProfile});
+  final ValueChanged<String> onOpenProfile;
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   int _feed = 0;
-  final _text = TextEditingController();
-
+  List<Map<String, dynamic>> _statuses = [];
+  bool _loading = true;
+  String? _error;
   @override
-  void dispose() {
-    _text.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    // Show the cached feed instantly; the network refresh then updates it.
+    final cached = _appStore?.cachedStatuses('feed-0');
+    if (cached != null && cached.isNotEmpty) {
+      _statuses = cached;
+      _loading = false;
+    }
+    _refresh();
+  }
+
+  Future<void> _refresh({bool silent = false}) async {
+    final api = _activeApi;
+    if (api == null) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await api.timeline(
+          type: _feed == 0 && _currentAccount != null ? 'home' : 'public',
+          local: _feed == 1);
+      _appStore?.cacheStatuses('feed-$_feed', data);
+      if (mounted) setState(() => _statuses = data);
+    } catch (error) {
+      if (mounted && !silent) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) => Column(children: [
         _PageTitle(
-            title: 'Home',
-            action: IconButton(
-                tooltip: 'Write post',
-                onPressed: _compose,
-                icon: const Icon(Icons.edit_square))),
+            title: _feed == 0 ? 'Home' : 'Public',
+            action: _currentAccount == null
+                ? null
+                : IconButton(
+                    tooltip: 'Write post',
+                    onPressed: _compose,
+                    icon: const Icon(Icons.edit_square))),
         _TimelineFilter(
-            selected: _feed,
-            options: const ['Following', 'Local', 'Federated'],
-            onSelect: (i) => setState(() => _feed = i)),
+          selected: _feed,
+          options: const ['Following', 'Local', 'Federated'],
+          onSelect: (i) {
+            setState(() => _feed = i);
+            // Cached feed renders instantly; refresh reconciles in the background.
+            final cached = _appStore?.cachedStatuses('feed-$i');
+            if (cached != null && cached.isNotEmpty) {
+              setState(() => _statuses = cached);
+            } else {
+              setState(() => _statuses = []);
+            }
+            _refresh(silent: true);
+          },
+        ),
+        if (_currentAccount == null)
+          const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Text('Public timeline · Sign in to follow accounts and post')),
+        if (_loading) const LinearProgressIndicator(),
+        if (_error != null) _StateMessage(message: _error!, action: _refresh),
         Expanded(
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            Card(
-                child: ListTile(
-                    leading: const CircleAvatar(child: Text('K')),
-                    title: const Text('What do you want to share?'),
-                    trailing: const Icon(Icons.add),
-                    onTap: _compose)),
-            for (final post in _posts)
-              _PostTile(post: post, onTap: () => widget.onOpenThread(post)),
-          ]),
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: _statuses.length,
+              // Ghost feeds the blur-ahead area so scrolling never shows blanks.
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: true,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, i) => _PostTile(
+                post: Post(_statuses[i], _activeApi!.instance.host),
+                onProfile: widget.onOpenProfile,
+                onTap: () => _openThread(context, _statuses[i]),
+              ),
+            ),
+          ),
         ),
       ]);
 
-  void _compose() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (sheetContext) => _ComposeSheet(
-        textController: _text,
-        onDismiss: () {
-          _text.clear();
-          Navigator.pop(sheetContext);
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Post added (local preview)')));
-        },
-      ),
-    );
-  }
-}
+  Future<void> _compose() => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (sheetContext) => _ComposeSheet(
+          onPosted: () async {
+            if (sheetContext.mounted) Navigator.pop(sheetContext);
+            await _refresh(silent: true);
+          },
+        ),
+      );
 
-class _ComposeSheet extends StatefulWidget {
-  final TextEditingController textController;
-  final VoidCallback onDismiss;
-  const _ComposeSheet({required this.textController, required this.onDismiss});
-  @override
-  State<_ComposeSheet> createState() => _ComposeSheetState();
-}
-
-class _ComposeSheetState extends State<_ComposeSheet> {
-  bool _cw = false;
-  String _visibility = 'Public';
-  bool _hasSensitive = false;
-  bool _hasAltText = false;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-      padding: EdgeInsets.fromLTRB(
-          20, 8, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-      child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Post', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            TextField(
-                controller: widget.textController,
-                autofocus: true,
-                minLines: 3,
-                maxLines: 6,
-                maxLength: 500,
-                decoration: const InputDecoration(
-                    hintText: 'What do you want to share?',
-                    border: OutlineInputBorder(),
-                    counterText: '')),
-            if (_cw)
-              const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: TextField(
-                      decoration: InputDecoration(
-                          labelText: 'Spoiler',
-                          border: OutlineInputBorder()))),
-            const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              FilterChip(
-                  label: const Text('Add Spoiler'),
-                  selected: _cw,
-                  onSelected: (v) => setState(() => _cw = v)),
-              DropdownButton<String>(
-                  value: _visibility,
-                  items: const ['Public', 'Unlisted', 'Followers', 'Direct']
-                      .map((v) => DropdownMenuItem(value: v, child: Text(v)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _visibility = v!)),
-              FilterChip(
-                  label: const Text('Sensitive'),
-                  selected: _hasSensitive,
-                  onSelected: (v) => setState(() => _hasSensitive = v)),
-              FilterChip(
-                  label: const Text('Has photo'),
-                  selected: _hasAltText,
-                  onSelected: (v) {
-                    setState(() => _hasAltText = v);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text(
-                            'Add image alt text after selecting a photo')));
-                  }),
-            ]),
-            if (_hasAltText)
-              const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: TextField(
-                      decoration: InputDecoration(
-                          labelText: 'Image description (alt text)',
-                          border: OutlineInputBorder(),
-                          hintText:
-                              'Describe what is visible in the image...'))),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                  onPressed: () {
-                    if (widget.textController.text.trim().isEmpty) return;
-                    setState(() {
-                      _cw = false;
-                      _hasSensitive = false;
-                      _hasAltText = false;
-                    });
-                    widget.onDismiss();
-                  },
-                  child: const Text('Send')),
+  Future<void> _openThread(BuildContext context, Map<String, dynamic> status) =>
+      showDialog<void>(
+        context: context,
+        builder: (_) => FutureBuilder<List<Map<String, dynamic>>>(
+          future: _activeApi?.thread(status['id'] as String? ?? ''),
+          builder: (context, snapshot) => AlertDialog(
+            title: const Text('Conversation'),
+            content: SizedBox(
+              width: 520,
+              child: snapshot.hasError
+                  ? Text('${snapshot.error}')
+                  : snapshot.connectionState != ConnectionState.done
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView(
+                          shrinkWrap: true,
+                          children: [
+                            ...?snapshot.data?.map((item) => _PostTile(
+                                  post: Post(item, _activeApi!.instance.host),
+                                  onProfile: widget.onOpenProfile,
+                                  onTap: () {},
+                                )),
+                            _PostTile(
+                              post: Post(status, _activeApi!.instance.host),
+                              onProfile: widget.onOpenProfile,
+                              onTap: () {},
+                            ),
+                          ],
+                        ),
             ),
-          ]));
-}
-
-// --- Timeline filter pills ---
-
-class _TimelineFilter extends StatelessWidget {
-  final int selected;
-  final List<String> options;
-  final ValueChanged<int> onSelect;
-  const _TimelineFilter({
-    required this.selected,
-    required this.options,
-    required this.onSelect,
-  });
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final inactiveColor = isDark
-        ? Theme.of(context).textTheme.bodyLarge!.color!.withValues(alpha: .6)
-        : Theme.of(context).textTheme.bodyLarge!.color!.withValues(alpha: .6);
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color:
-                (isDark ? Colors.white : Colors.black).withValues(alpha: .05),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
           ),
         ),
-      ),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          for (var i = 0; i < options.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: TextButton(
-                onPressed: () => onSelect(i),
-                style: TextButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      options[i],
-                      style: TextStyle(
-                        fontWeight:
-                            selected == i ? FontWeight.bold : FontWeight.normal,
-                        color: selected == i ? _green : inactiveColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    if (selected == i)
-                      Container(
-                        height: 3,
-                        width: 36,
-                        decoration: BoxDecoration(
-                          color: _green,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+      );
 }
 
-// --- Explore / Search screen ---
-
 class ExploreScreen extends StatefulWidget {
-  const ExploreScreen({super.key});
+  const ExploreScreen({super.key, required this.onOpenProfile});
+  final ValueChanged<String> onOpenProfile;
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  final _searchCtrl = TextEditingController();
-  String _category = 'Hashtags';
+  final _search = TextEditingController();
+  String _category = 'Tags';
   String _query = '';
+  List<Map<String, dynamic>> _results = [];
+  List<Map<String, dynamic>> _tags = [];
+  List<Map<String, dynamic>> _people = [];
+  List<Map<String, dynamic>> _statuses = [];
+  bool _loading = true;
+  String? _error;
+  @override
+  void initState() {
+    super.initState();
+    _trending();
+  }
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
+    _search.dispose();
     super.dispose();
   }
 
-  List<_SearchResultAccount> get _accountMatches =>
-      _searchResultsAccounts.where((a) {
-        final q = _query.toLowerCase();
-        return a.name.toLowerCase().contains(q) ||
-            a.handle.toLowerCase().contains(q);
-      }).toList();
+  Future<void> _trending() async {
+    try {
+      final api = _activeApi!;
+      final results = await Future.wait([
+        api.trendingTags(),
+        api.trendingAccounts(),
+        api.trendingStatuses(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _tags = results[0];
+          _people = results[1];
+          _statuses = results[2];
+          _loading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = '$error';
+          _loading = false;
+        });
+      }
+    }
+  }
 
-  List<_SearchResultPost> get _postMatches => _searchResultsPosts.where((p) {
-        final q = _query.toLowerCase();
-        return p.title.toLowerCase().contains(q) ||
-            p.handle.toLowerCase().contains(q);
-      }).toList();
-
-  bool get _showResults => _query.isNotEmpty;
+  Future<void> _doSearch(String query) async {
+    setState(() {
+      _query = query;
+      _error = null;
+    });
+    if (query.trim().isEmpty) {
+      setState(() => _results = []);
+      return;
+    }
+    try {
+      final data = await _activeApi!.searchAccounts(query.trim());
+      if (mounted) setState(() => _results = data);
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Column(children: [
         const _PageTitle(title: 'Explore'),
         Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SearchBar(
-                controller: _searchCtrl,
-                leading: const Icon(Icons.search),
-                hintText: 'Search accounts, hashtags, or posts',
-                onChanged: (v) => setState(() => _query = v))),
-        if (_showResults) ...[
-          Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Text(_query.isEmpty ? '' : 'Results for "$_query"',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w600))),
-          if (_category == 'Accounts' && _accountMatches.isNotEmpty) ...[
-            for (final a in _accountMatches)
-              ListTile(
-                  leading: CircleAvatar(child: Text(a.name.characters.first)),
-                  title: Text(a.name),
-                  subtitle: Text(a.handle),
-                  trailing: OutlinedButton(
-                      onPressed: () {}, child: const Text('Follow'))),
-          ],
-          if (_category == 'Posts' && _postMatches.isNotEmpty) ...[
-            for (final p in _postMatches)
-              ListTile(
-                  leading: const Icon(Icons.article_outlined),
-                  title: Text(p.title),
-                  subtitle: Text(p.handle),
-                  trailing: const Icon(Icons.chevron_right)),
-          ],
-          if (_accountMatches.isEmpty && _postMatches.isEmpty)
-            const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: Text('No results found'))),
-        ] else ...[
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final cat in const ['Hashtags', 'Accounts', 'Posts'])
-                  Padding(
-                      padding: const EdgeInsets.only(left: 20, right: 12),
-                      child: ChoiceChip(
-                          label: Text(cat),
-                          selected: _category == cat,
-                          onSelected: (_) => setState(() => _category = cat))),
-              ],
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SearchBar(
+            controller: _search,
+            hintText: 'Search accounts',
+            leading: const Icon(Icons.search),
+            onSubmitted: _doSearch,
           ),
-          const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Trending hashtags',
-                      style: TextStyle(fontWeight: FontWeight.bold)))),
-          Expanded(
-            child: ListView(children: [
-              for (final tag in _trendingHashtags)
-                ListTile(
-                    leading: const Icon(Icons.tag),
-                    title: Text(tag),
-                    subtitle: Text('${_trendingVolume(tag)} posts today'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {}),
-              const Divider(),
-              for (final a in _searchResultsAccounts)
-                ListTile(
-                    leading: CircleAvatar(child: Text(a.name.characters.first)),
-                    title: Text(a.name),
-                    subtitle: Text(a.handle),
-                    trailing: OutlinedButton(
-                        onPressed: () {}, child: const Text('Follow'))),
-            ]),
-          ),
-        ],
+        ),
+        const SizedBox(height: 10),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'Tags', label: Text('Tags')),
+            ButtonSegment(value: 'People', label: Text('People')),
+            ButtonSegment(value: 'Posts', label: Text('Posts')),
+          ],
+          selected: {_category},
+          onSelectionChanged: (value) => setState(() => _category = value.first),
+        ),
+        if (_loading) const LinearProgressIndicator(),
+        if (_error != null) _StateMessage(message: _error!, action: _trending),
+        Expanded(
+          child: _query.isNotEmpty && _category == 'People'
+              ? ListView(children: [for (final account in _results) _AccountRow(account: account, onTap: () => widget.onOpenProfile(account['acct'] as String? ?? ''))])
+              : ListView(children: [
+                  if (_category == 'Tags')
+                    for (final tag in _tags)
+                      ListTile(
+                        leading: const Icon(Icons.tag),
+                        title: Text(tag['name'] as String? ?? ''),
+                        subtitle: Text('${tag['history']?.length ?? 0} recent posts'),
+                      ),
+                  if (_category == 'People' && _query.isEmpty)
+                    for (final item in _people)
+                      _AccountRow(account: item['account'] as Map<String, dynamic>? ?? item, onTap: () => widget.onOpenProfile((item['account'] as Map<String, dynamic>?)?['acct'] as String? ?? '')),
+                  if (_category == 'Posts')
+                    for (final status in _statuses)
+                      _PostTile(post: Post(status, _activeApi!.instance.host), onProfile: widget.onOpenProfile, onTap: () {}),
+                ]),
+        ),
       ]);
-
-  static String _trendingVolume(String tag) {
-    const vol = {
-      'Linux': '2.4K',
-      'Photography': '1.8K',
-      'Fediverse': '920',
-      'Design': '756',
-      'Books': '432',
-    };
-    return vol[tag] ?? '100';
-  }
 }
-
-// --- Activity / Notifications screen ---
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -871,260 +816,621 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
-  int filter = 0;
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+  String? _error;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (_currentAccount == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final items = await _activeApi!.notifications();
+      if (mounted) {
+        setState(() {
+          _items = items;
+          _loading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = '$error';
+          _loading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Column(children: [
-        const _PageTitle(title: 'Activity'),
-        Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SegmentedButton<int>(segments: const [
-              ButtonSegment(value: 0, label: Text('All')),
-              ButtonSegment(value: 1, label: Text('Mentions')),
-              ButtonSegment(value: 2, label: Text('Likes')),
-            ], selected: {
-              filter
-            }, onSelectionChanged: (v) => setState(() => filter = v.first))),
+        _PageTitle(
+            title: 'Notifications',
+            action: _currentAccount == null
+                ? null
+                : IconButton(
+                    tooltip: 'Refresh',
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh))),
+        if (_loading) const LinearProgressIndicator(),
+        if (_error != null) _StateMessage(message: _error!, action: _load),
         Expanded(
-          child: ListView(children: const [
-            ListTile(
-                leading: CircleAvatar(child: Text('R')),
-                title: Text('Raka replied to your post'),
-                subtitle: Text(
-                    'Agreed! It is wonderful to see communities sharing good things. · 8m'),
-                trailing:
-                    Icon(Icons.mode_comment_outlined, color: Colors.blue)),
-            ListTile(
-                leading: CircleAvatar(child: Text('A')),
-                title: Text('Ayu liked your post'),
-                subtitle: Text('Sharing accessibility tips · 20m'),
-                trailing: Icon(Icons.favorite, color: Colors.pink)),
-            ListTile(
-                leading: CircleAvatar(child: Text('B')),
-                title: Text('Bima followed you'),
-                subtitle: Text('@bima@mastodon.social · 1h'),
-                trailing: Icon(Icons.person_add_alt_1)),
-          ]),
+          child: _currentAccount == null
+              ? Center(child: FilledButton.tonalIcon(
+                  onPressed: () {
+                    final shell =
+                        context.findAncestorStateOfType<_RumpunShellState>();
+                    shell?._openAccount();
+                  },
+                  icon: const Icon(Icons.login),
+                  label: const Text('Log in to see notifications')))
+              : _items.isEmpty && !_loading
+                  ? const Center(child: Text('No notifications yet'))
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(children: [
+                        for (final item in _items)
+                          _NotificationTile(item: item),
+                      ]),
+                    ),
         ),
       ]);
 }
 
-// --- Profile screen with tabs ---
+/// Maps Mastodon notification types to readable text and icons.
+class _NotificationTile extends StatelessWidget {
+  const _NotificationTile({required this.item});
+  final Map<String, dynamic> item;
+  @override
+  Widget build(BuildContext context) {
+    final account = item['account'] as Map<String, dynamic>? ?? {};
+    final name = (account['display_name'] as String?)?.isNotEmpty == true
+        ? account['display_name'] as String
+        : account['username'] as String? ??
+            account['acct'] as String? ??
+            'Someone';
+    final status = item['status'] as Map<String, dynamic>?;
+    final type = item['type'] as String? ?? '';
+    final (icon, text) = switch (type) {
+      'follow' => (Icons.person_add_alt, 'followed you'),
+      'favourite' => (Icons.favorite_border, 'liked your post'),
+      'reblog' => (Icons.repeat, 'boosted your post'),
+      'mention' => (Icons.alternate_email, 'mentioned you'),
+      'poll' => (Icons.poll_outlined, 'poll ended'),
+      'follow_request' => (Icons.person_add_alt_1_outlined, 'requested to follow you'),
+      'status' => (Icons.notifications_none, 'posted'),
+      'update' => (Icons.edit_outlined, 'edited a post'),
+      'admin.sign_up' => (Icons.how_to_reg_outlined, 'signed up'),
+      _ => (Icons.notifications_none, type.isEmpty ? 'activity' : type),
+    };
+    return ListTile(
+      leading: _Avatar(account: account),
+      title: Text.rich(TextSpan(children: [
+        TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        TextSpan(text: ' $text'),
+      ])),
+      subtitle: status != null
+          ? Text(_plainText(status['content'] as String? ?? ''),
+              maxLines: 1, overflow: TextOverflow.ellipsis)
+          : null,
+      trailing: status != null
+          ? Text(_relativeTime(status['created_at'] as String?),
+              style: Theme.of(context).textTheme.bodySmall)
+          : null,
+    );
+  }
+}
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, required this.account, this.accountId,
+      required this.onOpenProfile});
+  final Map<String, dynamic>? account;
+  final String? accountId;
+  final ValueChanged<String> onOpenProfile;
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  int _tab = 0;
+  List<Map<String, dynamic>> _statuses = [];
+  bool _loading = true;
+  String? _error;
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-        child: Column(children: [
-          const _PageTitle(title: 'Profile'),
-          const SizedBox(height: 8),
-          Center(
-            child: CircleAvatar(
-                radius: 44,
-                backgroundColor:
-                    Theme.of(context).colorScheme.primary.withAlpha(30),
-                child: const CircleAvatar(
-                    radius: 40,
-                    child: Text('K', style: TextStyle(fontSize: 28)))),
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account?['id'] != widget.account?['id']) _load();
+  }
+
+  Future<void> _load() async {
+    final account = widget.account;
+    if (account == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final data = await _activeApi!.accountStatuses(account['id'] as String);
+      if (mounted) {
+        setState(() {
+          _statuses = data;
+          _loading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = '$error';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = widget.account;
+    if (account == null) {
+      return const Center(child: Text('Choose Log in to connect an account.'));
+    }
+    final acct = account['acct'] as String? ?? '';
+    final host = acct.contains('@') ? acct.split('@').last : _activeApi!.instance.host;
+    final header = account['header'] as String? ?? '';
+    return Column(children: [
+      const _PageTitle(title: 'Profile'),
+      Expanded(
+        child: ListView(padding: const EdgeInsets.all(20), children: [
+          _ProfileBanner(header: header, account: account),
+          const SizedBox(height: 54),
+          Center(child: Text((account['display_name'] as String?)?.isNotEmpty == true ? account['display_name'] as String : account['username'] as String? ?? acct, style: Theme.of(context).textTheme.titleLarge)),
+          Center(child: Text('@$acct')),
+          if (account['note'] is String && (account['note'] as String).isNotEmpty)
+            Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(_plainText(account['note'] as String), textAlign: TextAlign.center)),
+          Center(child: Wrap(spacing: 18, children: [
+            Text('${account['statuses_count'] ?? 0} posts'),
+            Text('${account['following_count'] ?? 0} following'),
+            Text('${account['followers_count'] ?? 0} followers'),
+          ])),
+          if (widget.accountId != null)
+            Align(alignment: Alignment.centerRight, child: TextButton.icon(
+              onPressed: () => showModalBottomSheet<void>(context: context, builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                ListTile(leading: const Icon(Icons.tune), title: const Text('Settings'), onTap: () { Navigator.pop(context); _settings(context); }),
+                ListTile(leading: const Icon(Icons.logout), title: const Text('Log out'), onTap: () async { Navigator.pop(context); final shell = context.findAncestorStateOfType<_RumpunShellState>(); await shell?._logout(); }),
+              ]))),
+              icon: const Icon(Icons.more_horiz), label: const Text('Account'))),
+          const Divider(height: 28),
+          if (_loading) const LinearProgressIndicator(),
+          if (_error != null) Text('Could not load posts: $_error'),
+          if (_statuses.isEmpty && !_loading && _error == null)
+            const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('No posts yet'))),
+          for (final status in _statuses)
+            _PostTile(post: Post(status, host), onProfile: widget.onOpenProfile, onTap: () {}),
+        ]),
+      ),
+    ]);
+  }
+
+  Future<void> _settings(BuildContext context) async {
+    final shell = context.findAncestorStateOfType<_RumpunShellState>();
+    await shell?._settingsFromMenu();
+  }
+}
+
+class _ProfileBanner extends StatelessWidget {
+  const _ProfileBanner({required this.header, required this.account});
+  final String header;
+  final Map<String, dynamic> account;
+  @override
+  Widget build(BuildContext context) {
+    final hasHeader = header.isNotEmpty;
+    return Stack(alignment: Alignment.bottomCenter, children: [
+      Padding(
+        padding: const EdgeInsets.only(bottom: 44),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: AspectRatio(
+            aspectRatio: 3,
+            child: hasHeader
+                ? Image.network(header, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const _BannerFallback())
+                : const _BannerFallback(),
           ),
-          const SizedBox(height: 12),
-          Text('You',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-          const _HandleDisplay(handle: '@kamu@ruang.id'),
-          const SizedBox(height: 8),
-          const Text(
-              'Happy to share stories, ideas, and small things that make the day better.',
-              style: TextStyle(color: Color(0xFF9AA4A0)),
-              textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          const Wrap(alignment: WrapAlignment.center, spacing: 20, children: [
-            Text('24 Following'),
-            Text('128 Followers'),
-            Text('36 Posts'),
-          ]),
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 8),
-          _ProfileTabBar(
-              tabs: const ['Posts', 'Replies', 'Media'],
-              selected: _tab,
-              onTap: (i) => setState(() => _tab = i)),
-          const SizedBox(height: 8),
-          _buildTabContent(),
-          const SizedBox(height: 24),
+        ),
+      ),
+      _Avatar(account: account, radius: 54),
+    ]);
+  }
+}
+
+class _BannerFallback extends StatelessWidget {
+  const _BannerFallback();
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              _green.withValues(alpha: 0.55),
+              _green.withValues(alpha: 0.18),
+            ],
+          ),
+        ),
+      );
+}
+
+class _AccountRow extends StatelessWidget {
+  const _AccountRow({required this.account, required this.onTap});
+  final Map<String, dynamic> account;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => ListTile(
+        leading: _Avatar(account: account),
+        title: Text(account['display_name'] as String? ?? account['username'] as String? ?? ''),
+        subtitle: Text('@${account['acct'] ?? ''}'),
+        onTap: onTap,
+      );
+}
+
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.account, this.radius = 20});
+  final Map<String, dynamic> account;
+  final double radius;
+  @override
+  Widget build(BuildContext context) {
+    final url = account['avatar'] as String? ?? '';
+    if (url.isEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        child: Icon(Icons.person_outline, size: radius),
+      );
+    }
+    // avatar_static is the smaller variant Mastodon serves for timelines.
+    final small = (account['avatar_static'] as String?) ?? url;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return CircleAvatar(
+      radius: radius,
+      backgroundImage: ResizeImage(NetworkImage(small),
+          width: (radius * 2 * dpr).round(), height: (radius * 2 * dpr).round(),
+          policy: ResizeImagePolicy.exact,
+          allowUpscaling: false),
+      onBackgroundImageError: (_, __) {},
+    );
+  }
+}
+
+class _TimelineFilter extends StatelessWidget {
+  const _TimelineFilter({required this.selected, required this.options, required this.onSelect});
+  final int selected;
+  final List<String> options;
+  final ValueChanged<int> onSelect;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 42,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (var i = 0; i < options.length; i++)
+              TextButton(
+                onPressed: () => onSelect(i),
+                child: Text(options[i],
+                    style: TextStyle(
+                        fontWeight: selected == i ? FontWeight.bold : FontWeight.normal,
+                        color: selected == i ? _green : null)),
+              ),
+          ],
+        ),
+      );
+}
+
+class _PageTitle extends StatelessWidget {
+  const _PageTitle({required this.title, this.action});
+  final String title;
+  final Widget? action;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+        child: Row(children: [
+          Text(title, style: Theme.of(context).textTheme.headlineSmall),
+          const Spacer(),
+          if (action != null) action!,
         ]),
       );
+}
 
-  Widget _buildTabContent() {
-    switch (_tab) {
-      case 1:
-        return const Padding(
-            padding: EdgeInsets.all(32),
-            child: Center(child: Text('Your replies will appear here')));
-      case 2:
-        return const Padding(
-            padding: EdgeInsets.all(32),
-            child: Center(child: Text('Media you upload will appear here')));
-      default:
-        return Column(children: [
-          for (final post in _posts) _PostTile(post: post, onTap: () {}),
-        ]);
+class _StateMessage extends StatelessWidget {
+  const _StateMessage({required this.message, required this.action});
+  final String message;
+  final VoidCallback action;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(children: [
+          Expanded(child: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis)),
+          TextButton(onPressed: action, child: const Text('Retry')),
+        ]),
+      );
+}
+
+class _PostTile extends StatelessWidget {
+  const _PostTile({required this.post, required this.onProfile, required this.onTap});
+  final Post post;
+  final ValueChanged<String> onProfile;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final attachments = post.data['media_attachments'] as List<dynamic>? ?? const [];
+    final spoiler = post.data['spoiler_text'] as String? ?? '';
+    final theme = Theme.of(context);
+    final signedIn = _currentAccount != null;
+    return Card(
+      color: theme.colorScheme.surfaceContainerLow,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          InkWell(
+            onTap: () => onProfile(post.acct),
+            child: Row(children: [
+              _Avatar(account: post.account, radius: 18),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(post.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(post.handle, style: theme.textTheme.bodySmall),
+              ])),
+              Text(_relativeTime(post.data['created_at'] as String?), style: theme.textTheme.bodySmall),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          if (spoiler.isNotEmpty) _Spoiler(content: post.content, warning: spoiler)
+          else _HtmlText(html: post.content),
+          if (attachments.isNotEmpty)
+            _MediaGallery(attachments: [
+              for (final attachment in attachments)
+                if (attachment is Map<String, dynamic> && attachment['url'] != null)
+                  attachment,
+            ]),
+          Row(children: [
+            IconButton(tooltip: 'Reply', onPressed: onTap, icon: const Icon(Icons.mode_comment_outlined)),
+            IconButton(tooltip: 'Like', onPressed: signedIn ? null : () => _action(post.id, 'favourite'), icon: const Icon(Icons.favorite_border)),
+            IconButton(tooltip: 'Boost', onPressed: signedIn ? null : () => _action(post.id, 'reblog'), icon: const Icon(Icons.repeat)),
+            const Spacer(),
+            IconButton(tooltip: 'Share', onPressed: () => _share(context, post), icon: const Icon(Icons.ios_share)),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _action(String id, String action) async {
+    try {
+      await _activeApi!.action(id, action);
+    } catch (_) {}
+  }
+}
+
+Future<void> _share(BuildContext context, Post post) async {
+  final url = post.data['url'] as String? ?? '';
+  await showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+          leading: const Icon(Icons.link),
+          title: const Text('Copy link'),
+          onTap: () async {
+            Navigator.pop(sheetContext);
+            await Clipboard.setData(ClipboardData(text: url));
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Link copied')));
+            }
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.open_in_new),
+          title: const Text('Open in browser'),
+          onTap: () {
+            Navigator.pop(sheetContext);
+            if (url.isNotEmpty) {
+              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+            }
+          },
+        ),
+      ]),
+    ),
+  );
+}
+
+class _Spoiler extends StatefulWidget {
+  const _Spoiler({required this.content, required this.warning});
+  final String content;
+  final String warning;
+  @override
+  State<_Spoiler> createState() => _SpoilerState();
+}
+
+class _SpoilerState extends State<_Spoiler> {
+  bool _show = false;
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(widget.warning, style: const TextStyle(fontWeight: FontWeight.w600)),
+        TextButton(onPressed: () => setState(() => _show = !_show), child: Text(_show ? 'Hide sensitive content' : 'Show sensitive content')),
+        if (_show) _HtmlText(html: widget.content),
+      ]);
+}
+
+class _HtmlText extends StatelessWidget {
+  const _HtmlText({required this.html});
+  final String html;
+  @override
+  Widget build(BuildContext context) {
+    final text = _plainText(html);
+    // ponytail: SelectionArea over one Text per post; cheaper than per-post
+    // SelectableText (each owns a selection overlay). Upgrade: html renderer.
+    return SelectionArea(child: Text(text));
+  }
+}
+
+String _plainText(String html) => html
+    .replaceAll(RegExp(r'<br\s*/?>|</p>|</div>', caseSensitive: false), '\n')
+    .replaceAll(RegExp(r'<[^>]*>'), '')
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .trim();
+
+String _relativeTime(String? value) {
+  final date = DateTime.tryParse(value ?? '')?.toLocal();
+  if (date == null) return '';
+  final age = DateTime.now().difference(date);
+  if (age.inDays > 0) return '${age.inDays}d';
+  if (age.inHours > 0) return '${age.inHours}h';
+  if (age.inMinutes > 0) return '${age.inMinutes}m';
+  return 'now';
+}
+
+/// Inline gallery for a post's media. Tapping a tile opens the fullscreen
+/// preview; the play affordance lives there, not inline.
+class _MediaGallery extends StatelessWidget {
+  const _MediaGallery({required this.attachments});
+  final List<Map<String, dynamic>> attachments;
+  @override
+  Widget build(BuildContext context) {
+    if (attachments.isEmpty) return const SizedBox.shrink();
+    final single = attachments.length == 1;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: LayoutBuilder(builder: (context, box) => Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final (index, attachment) in attachments.indexed)
+          GestureDetector(
+            onTap: () => _showPreview(context, attachments, index),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                width: single
+                    ? box.maxWidth
+                    : (box.maxWidth - (attachments.length - 1) * 8) / attachments.length.clamp(2, 3),
+                height: single ? null : 110,
+                child: AspectRatio(
+                  aspectRatio: single ? _attachmentAspect(attachment) : 1,
+                  child: Image.network(
+                      attachment['preview_url'] as String? ??
+                          attachment['url'] as String,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          child: Icon(
+                              attachment['type'] == 'audio'
+                                  ? Icons.audio_file_outlined
+                                  : Icons.image_outlined))),
+                ),
+              ),
+            ),
+          ),
+      ])),
+    );
+  }
+
+  void _showPreview(BuildContext context,
+      List<Map<String, dynamic>> attachments, int initialIndex) {
+    if (MediaQuery.sizeOf(context).width >= 760) {
+      showDialog<void>(
+        context: context,
+        builder: (_) => Dialog.fullscreen(
+            child: _MediaPreview(attachments: attachments, initialIndex: initialIndex)),
+      );
+    } else {
+      Navigator.of(context).push(MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _MediaPreview(attachments: attachments, initialIndex: initialIndex),
+      ));
     }
   }
 }
 
-class _ProfileTabBar extends StatelessWidget {
-  final List<String> tabs;
-  final int selected;
-  final ValueChanged<int> onTap;
-  const _ProfileTabBar(
-      {required this.tabs, required this.selected, required this.onTap});
+/// Fullscreen viewer: swipeable pages, alt text, and open-in-browser.
+class _MediaPreview extends StatefulWidget {
+  const _MediaPreview({required this.attachments, required this.initialIndex});
+  final List<Map<String, dynamic>> attachments;
+  final int initialIndex;
   @override
-  Widget build(BuildContext context) => Row(children: [
-        for (var i = 0; i < tabs.length; i++)
-          Expanded(
-              child: Center(
-                  child: Column(children: [
-            InkWell(
-                onTap: () => onTap(i),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Text(tabs[i],
-                        style: TextStyle(
-                            fontWeight: selected == i
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            color: selected == i ? _green : null)))),
-            if (selected == i)
-              Container(
-                  height: 3,
-                  width: 32,
-                  decoration: BoxDecoration(
-                      color: _green, borderRadius: BorderRadius.circular(2))),
-          ]))),
-      ]);
+  State<_MediaPreview> createState() => _MediaPreviewState();
 }
 
-// --- Reused widgets ---
-
-class _PageTitle extends StatelessWidget {
-  final String title;
-  final Widget? action;
-  const _PageTitle({required this.title, this.action});
-  @override
-  Widget build(BuildContext context) => Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
-      child: Row(children: [
-        Text(title,
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
-        const Spacer(),
-        if (action != null) action!
-      ]));
-}
-
-class _PostTile extends StatefulWidget {
-  final Post post;
-  final VoidCallback onTap;
-  const _PostTile({required this.post, required this.onTap});
-  @override
-  State<_PostTile> createState() => _PostTileState();
-}
-
-class _PostTileState extends State<_PostTile> {
-  bool _reveal = false;
-
+class _MediaPreviewState extends State<_MediaPreview> {
+  late int _index = widget.initialIndex;
   @override
   Widget build(BuildContext context) {
-    final hasCW = widget.post.contentWarning != null;
-    final reveal = _reveal || !hasCW;
-    return Card(
-        elevation: 0,
-        child: InkWell(
-            onTap: reveal ? widget.onTap : () => setState(() => _reveal = true),
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        CircleAvatar(
-                            child: Text(widget.post.avatar.isEmpty
-                                ? widget.post.name.characters.first
-                                : widget.post.avatar)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                              Text(widget.post.name,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _HandleDisplay(handle: widget.post.handle),
-                                    const SizedBox(width: 8),
-                                    Text(' · ${widget.post.time}',
-                                        style: Theme.of(context).textTheme.bodySmall),
-                                  ],
-                                ),
-                              ),
-                            ])),
-                        const Icon(Icons.more_horiz),
-                      ]),
-                      if (hasCW && !reveal) ...[
-                        const SizedBox(height: 8),
-                        Row(children: [
-                          const Icon(Icons.warning_amber_outlined, size: 18),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                                'Spoiler: ${widget.post.contentWarning}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600)),
-                          ),
-                        ]),
-                        TextButton(
-                            onPressed: () => setState(() => _reveal = true),
-                            child: const Text('View reply')),
-                      ] else ...[
-                        const SizedBox(height: 8),
-                        Text(widget.post.text),
-                        const SizedBox(height: 8),
-                        Row(children: [
-                          IconButton(
-                              tooltip: 'Reply',
-                              onPressed: widget.onTap,
-                              icon: const Icon(Icons.mode_comment_outlined)),
-                          IconButton(
-                              tooltip: 'Like',
-                              onPressed: () {},
-                              icon: const Icon(Icons.favorite_border)),
-                          IconButton(
-                              tooltip: 'Repost',
-                              onPressed: () {},
-                              icon: const Icon(Icons.repeat)),
-                          IconButton(
-                              tooltip: 'Share',
-                              onPressed: () {},
-                              icon: const Icon(Icons.share_outlined)),
-                        ]),
-                      ],
-                    ]))));
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        actions: [
+          if (_altText.isNotEmpty)
+            IconButton(
+                icon: const Icon(Icons.closed_caption_outlined),
+                tooltip: 'Alt text',
+                onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                        title: const Text('Description'),
+                        content: Text(_altText),
+                        actions: [TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'))]))),
+          IconButton(
+              tooltip: 'Open in browser',
+              onPressed: () => launchUrl(
+                  Uri.parse(_current['url'] as String),
+                  mode: LaunchMode.externalApplication),
+              icon: const Icon(Icons.open_in_new)),
+        ],
+      ),
+      body: widget.attachments.length == 1
+          ? _centered(_current)
+          : PageView(
+              controller: PageController(initialPage: widget.initialIndex),
+              onPageChanged: (i) => setState(() => _index = i),
+              children: [for (final attachment in widget.attachments) _centered(attachment)],
+            ),
+    );
   }
+
+  Map<String, dynamic> get _current => widget.attachments[_index];
+
+  String get _altText =>
+      (_current['description'] as String? ?? '').trim();
+
+  Widget _centered(Map<String, dynamic> attachment) => Center(
+        child: InteractiveViewer(
+          maxScale: 4,
+          child: Image.network(
+            attachment['preview_url'] as String? ?? attachment['url'] as String,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined,
+                color: Colors.white54, size: 48),
+          ),
+        ),
+      );
+}
+
+double _attachmentAspect(Map<String, dynamic> attachment) {
+  final w = attachment['meta']?['small']?['width'];
+  final h = attachment['meta']?['small']?['height'];
+  if (w is num && h is num && h > 0) return (w / h).clamp(0.5, 3.0);
+  return 16 / 9;
 }

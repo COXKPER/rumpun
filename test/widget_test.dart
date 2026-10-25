@@ -1,175 +1,53 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:rumpun/app_store.dart';
+import 'package:rumpun/fediverse_api.dart';
 import 'package:rumpun/main.dart';
 
+RumpunApp testApp() {
+  final api = FediverseApi('mastodon.social', client: MockClient((_) async =>
+      http.Response(jsonEncode([]), 200)));
+  final store = AppStore.at((_) => ':memory:');
+  return RumpunApp(api: api, store: store);
+}
+
 void main() {
-  testWidgets('navigates all main screens', (tester) async {
+  testWidgets('signed-out shell shows live browsing and login, not fixtures', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RumpunApp());
-
-    expect(find.text('Home'), findsWidgets);
+    await tester.pumpWidget(testApp());
+    await tester.pumpAndSettle();
     expect(find.text('Following'), findsOneWidget);
     expect(find.text('Local'), findsOneWidget);
     expect(find.text('Federated'), findsOneWidget);
-    expect(find.textContaining('Beautiful morning'), findsOneWidget);
-
-    await tester.tap(find.text('Explore'));
+    expect(find.text('Beautiful morning'), findsNothing);
+    expect(find.text('Raka replied to your post'), findsNothing);
+    expect(find.byTooltip('Log in'), findsOneWidget);
+    await tester.tap(find.byTooltip('Log in'));
     await tester.pumpAndSettle();
-    expect(find.text('Trending hashtags'), findsOneWidget);
-    expect(find.text('Linux'), findsOneWidget);
-
-    await tester.tap(find.text('Activity'));
-    await tester.pumpAndSettle();
-    expect(find.text('Raka replied to your post'), findsOneWidget);
-
-    await tester.tap(find.text('Profile'));
-    await tester.pumpAndSettle();
-    expect(find.text('@kamu'), findsOneWidget);
-    expect(find.text('128 Followers'), findsOneWidget);
-
-    await tester.tap(find.text('Home'));
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('opens compose modal with spoiler, visibility, and alt text',
-      (tester) async {
-    tester.view.physicalSize = const Size(400, 1100);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RumpunApp());
-
-    await tester.tap(find.text('What do you want to share?'));
-    await tester.pumpAndSettle();
-    expect(find.text('Post'), findsOneWidget);
-    expect(find.text('Add Spoiler'), findsOneWidget);
-    expect(find.text('Sensitive'), findsOneWidget);
-    expect(find.text('Has photo'), findsOneWidget);
-
-    // Toggle spoiler - should show the Spoiler TextField
-    await tester.tap(find.text('Add Spoiler'));
-    await tester.pumpAndSettle();
-    expect(find.text('Spoiler'), findsOneWidget);
-
-    // Close by tapping outside
-    await tester.tapAt(const Offset(12, 12));
-    await tester.pumpAndSettle();
-    expect(find.text('Post'), findsNothing);
-  });
-
-  testWidgets('search bar filters results', (tester) async {
-    tester.view.physicalSize = const Size(400, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RumpunApp());
-
-    // Go to Explore
-    await tester.tap(find.text('Explore'));
-    await tester.pumpAndSettle();
-
-    // Switch to Accounts category
-    await tester.tap(find.text('Accounts'));
-    await tester.pumpAndSettle();
-
-    // Type search query
-    await tester.enterText(find.byType(SearchBar), 'nadia');
-    await tester.pumpAndSettle();
-
-    // Should show results
-    expect(find.text('Nadia Putri'), findsOneWidget);
-  });
-
-  testWidgets('collapses and reveals spoiler posts', (tester) async {
-    tester.view.physicalSize = const Size(400, 1100);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RumpunApp());
-
-    // Ensure the spoiler post is visible (it's below the fold)
-    await tester.ensureVisible(find.text('Citra Dewi'));
-    await tester.pumpAndSettle();
-
-    // The spoiler post should show warning button
-    expect(find.text('View reply'), findsOneWidget);
-
-    // Tap to reveal
-    await tester.tap(find.text('View reply'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Personal reflection'), findsOneWidget);
-  });
-
-  testWidgets('opens thread conversation sheet', (tester) async {
-    tester.view.physicalSize = const Size(400, 1100);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RumpunApp());
-
-    // Tap the first post (Nadia Putri) which has no spoiler
-    await tester.tap(find.textContaining('Beautiful morning').first);
-    await tester.pumpAndSettle();
-
-    // Thread sheet should show
-    expect(find.text('Conversation'), findsOneWidget);
-    expect(find.text('Raka Wirawan'), findsOneWidget);
-    expect(find.textContaining('Agreed! It is wonderful'), findsOneWidget);
-
-    // Close the thread
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pumpAndSettle();
-    expect(find.text('Conversation'), findsNothing);
-  });
-
-  testWidgets('profile tabs switch content', (tester) async {
-    tester.view.physicalSize = const Size(400, 1100);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RumpunApp());
-
-    await tester.tap(find.text('Profile'));
-    await tester.pumpAndSettle();
-
-    // Posts tab should be active by default
-    expect(find.text('Posts'), findsWidgets);
-
-    // Switch to Replies
-    await tester.tap(find.text('Replies'));
-    await tester.pumpAndSettle();
-    expect(find.text('Your replies will appear here'), findsOneWidget);
-
-    // Switch to Media
-    await tester.tap(find.text('Media'));
-    await tester.pumpAndSettle();
-    expect(find.text('Media you upload will appear here'), findsOneWidget);
-  });
-
-  testWidgets('handle display shows local and cross-instance handles',
-      (tester) async {
-    tester.view.physicalSize = const Size(400, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RumpunApp());
-
-    // Local handle should show only @username (no @ruang.id)
-    expect(find.text('@nadia'), findsOneWidget);
-    expect(find.text('@nadia@ruang.id'), findsNothing);
-
-    // Cross-instance handle should show @username
-    expect(find.text('@bima'), findsOneWidget);
-    // Cross-instance server badge should show the instance name
+    expect(find.text('Log in'), findsOneWidget);
     expect(find.text('mastodon.social'), findsWidgets);
+  });
 
-    // Profile header should show local handle as @kamu
-    await tester.tap(find.text('Profile'));
+  testWidgets('settings lets user change default public server', (tester) async {
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(testApp());
     await tester.pumpAndSettle();
-    expect(find.text('@kamu'), findsOneWidget);
-    expect(find.text('@kamu@ruang.id'), findsNothing);
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Default instance'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, 'social.example');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('social.example'), findsOneWidget);
   });
 }
