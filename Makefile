@@ -3,12 +3,15 @@
 FLUTTER ?= flutter
 BUNDLE := build/linux/x64/release/bundle
 
-.PHONY: all build debug run test analyze clean
+.PHONY: all build debug run apk test analyze clean
 
 all: build
 
 build:
 	$(FLUTTER) build linux --release
+
+apk:
+	$(FLUTTER) build apk --release
 
 debug:
 	$(FLUTTER) build linux --debug

@@ -22,6 +22,12 @@ class CachedNetworkImage extends ImageProvider<CachedNetworkImage> {
 
   static Directory? _cacheDir;
 
+  /// One pooled client: a fresh HttpClient per image meant a TLS handshake
+  /// and a new socket for every tile while scrolling.
+  static final HttpClient _client = HttpClient()
+    ..maxConnectionsPerHost = 6
+    ..idleTimeout = const Duration(seconds: 30);
+
   static Future<Directory> cacheDir() async {
     final existing = _cacheDir;
     if (existing != null) return existing;
@@ -45,6 +51,39 @@ class CachedNetworkImage extends ImageProvider<CachedNetworkImage> {
     }
   }
 
+  /// Downloads [url] into the shared media cache and returns the file, or
+  /// null when the caller should stream it instead (too large, or a failure).
+  /// Keeps whole video/audio files out of memory: media_kit plays from disk.
+  static Future<File?> cachedFile(String url, {int maxBytes = 25 << 20}) async {
+    final dir = await cacheDir();
+    final file = File('${dir.path}/media_'
+        '${Uri.encodeComponent(url).hashCode.abs()}');
+    if (file.existsSync()) return file;
+    try {
+      final request = await _client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return null;
+      }
+      if (response.contentLength > maxBytes) {
+        await response.drain<void>();
+        return null;
+      }
+      final builder = BytesBuilder(copy: false);
+      var total = 0;
+      await for (final chunk in response) {
+        total += chunk.length;
+        if (total > maxBytes) return null;
+        builder.add(chunk);
+      }
+      await file.writeAsBytes(builder.takeBytes(), flush: false);
+      return file;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Future<CachedNetworkImage> obtainKey(ImageConfiguration configuration) =>
       SynchronousFuture<CachedNetworkImage>(this);
@@ -65,26 +104,18 @@ class CachedNetworkImage extends ImageProvider<CachedNetworkImage> {
     if (file.existsSync()) {
       bytes = await file.readAsBytes();
     } else {
-      final client = HttpClient();
-      try {
-        final response = await client.getUrl(Uri.parse(key.url))
-            .then((request) => request.close());
-        if (response.statusCode != 200) {
-          throw NetworkImageLoadException(
-              statusCode: response.statusCode, uri: Uri.parse(key.url));
-        }
-        final builder = BytesBuilder(copy: false);
-        await for (final chunk in response) {
-          builder.add(chunk);
-        }
-        bytes = builder.takeBytes();
-        // Bump the in-memory cap before writing big files; the default 100 MiB
-        // evicts aggressively while scrolling feeds.
-        PaintingBinding.instance.imageCache.maximumSizeBytes = 256 << 20;
-        await file.writeAsBytes(bytes, flush: false);
-      } finally {
-        client.close(force: true);
+      final response = await _client.getUrl(Uri.parse(key.url))
+          .then((request) => request.close());
+      if (response.statusCode != 200) {
+        throw NetworkImageLoadException(
+            statusCode: response.statusCode, uri: Uri.parse(key.url));
       }
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        builder.add(chunk);
+      }
+      bytes = builder.takeBytes();
+      await file.writeAsBytes(bytes, flush: false);
     }
     final buffer = await ImmutableBuffer.fromUint8List(bytes);
     return decode(buffer, getTargetSize: (intrinsicWidth, intrinsicHeight) {

@@ -4,20 +4,32 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_store.dart';
 import 'fediverse_api.dart';
+import 'l10n.dart';
 import 'image_cache.dart';
 import 'oauth_callback.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
+  // One-time cap bump: the default 100 MiB evicts while scrolling feeds.
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 256 << 20;
+  try {
+    MediaKit.ensureInitialized();
+  } catch (e) {
+    // Native media backend unavailable; video playback won't work but the
+    // rest of the app must still start.
+    debugPrint('MediaKit init failed: $e');
+  }
   runApp(const RumpunApp());
 }
 
@@ -48,6 +60,10 @@ class _RumpunAppState extends State<RumpunApp> {
     final store = widget.store ?? await AppStore.open();
     _appStore = store;
     _instance = store.preferredInstance;
+    // Fire-and-forget: the table lands a frame later via l10nVersion, and
+    // startup never blocks on an asset read (which also spins the spinner
+    // forever in widget tests when the bundle read is slow).
+    loadL10n(store.preferredLanguage);
     if (widget.api != null) {
       _activeApi = widget.api;
       if (mounted) setState(() => _ready = true);
@@ -77,11 +93,17 @@ class _RumpunAppState extends State<RumpunApp> {
   Locale? get _localeOverride {
     final tag = _appStore?.preferredLanguage ?? 'system';
     if (tag == 'system' || tag.isEmpty) return null;
-    return Locale(tag);
+    // Stored as `en-gb` / `id-id`; Flutter wants language and country apart.
+    final parts = normalizeTag(tag).split('-');
+    return parts.length > 1
+        ? Locale(parts[0], parts[1].toUpperCase())
+        : Locale(parts[0]);
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: l10nVersion,
+        builder: (context, version, _) => MaterialApp(
         title: 'Fediverse',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
@@ -96,11 +118,18 @@ class _RumpunAppState extends State<RumpunApp> {
           useMaterial3: true,
         ),
         locale: _localeOverride,
-        supportedLocales: const [Locale('en'), Locale('id')],
+        // DefaultMaterialLocalizations is English-only; without these an
+        // `id_ID` locale leaves MaterialLocalizations null and every
+        // TextField crashes on MaterialLocalizations.of.
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        supportedLocales: const [
+          Locale('en', 'US'), Locale('en', 'GB'), Locale('en', 'SG'),
+          Locale('id', 'ID'), Locale('ja', 'JP'),
+        ],
         home: _ready ? const RumpunShell() : const Scaffold(
           body: Center(child: CircularProgressIndicator()),
         ),
-      );
+      ));
 }
 
 class Post {
@@ -129,15 +158,22 @@ class RumpunShell extends StatefulWidget {
 
 class _RumpunShellState extends State<RumpunShell> {
   final _homeKey = GlobalKey<_HomeScreenState>();
+  final _tweetsKey = GlobalKey<_TweetsScreenState>();
+  final _activityKey = GlobalKey<_ActivityScreenState>();
   int _page = 0;
+  List<String> get _titles => [
+        t('Home'), t('Tweets'), t('Explore'), t('Notifications'),
+        t('Profile'),
+      ];
   Map<String, dynamic>? _profileAccount;
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 760;
     final pages = [
       HomeScreen(key: _homeKey, onOpenProfile: _openProfile),
+      TweetsScreen(key: _tweetsKey, onOpenProfile: _openProfile),
       ExploreScreen(onOpenProfile: _openProfile),
-      const ActivityScreen(),
+      ActivityScreen(key: _activityKey),
       _profileAccount == null
           ? ProfileScreen(account: _currentAccount, accountId: _currentAccountId,
               onOpenProfile: _openProfile)
@@ -153,7 +189,28 @@ class _RumpunShellState extends State<RumpunShell> {
               child: const Icon(Icons.add)),
       body: SafeArea(
         child: Column(children: [
-          _TopBar(onAccount: _openAccount, onSettings: _settings),
+          _TopBar(
+            title: _titles[_page],
+            onAccount: _openAccount,
+            onSettings: _settings,
+            action: switch (_page) {
+              0 => IconButton(
+                  tooltip: 'Bookmarks',
+                  onPressed: _currentAccount == null
+                      ? null
+                      : () => _homeKey.currentState?._openBookmarks(),
+                  icon: const Icon(Icons.bookmark_border)),
+              1 => IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: () => _tweetsKey.currentState?.refresh(),
+                  icon: const Icon(Icons.refresh)),
+              3 => IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: () => _activityKey.currentState?.refresh(),
+                  icon: const Icon(Icons.refresh)),
+              _ => null,
+            },
+          ),
           Expanded(
             child: Row(children: [
               if (wide)
@@ -161,17 +218,24 @@ class _RumpunShellState extends State<RumpunShell> {
                   selectedIndex: _page,
                   onDestinationSelected: (i) => setState(() {
                     _page = i;
-                    if (i != 3) _profileAccount = null;
+                    if (i != 4) _profileAccount = null;
                   }),
-                  destinations: const [
+                  destinations: [
                     NavigationRailDestination(
-                        icon: Icon(Icons.home_outlined), label: Text('Home')),
+                        icon: const Icon(Icons.home_outlined),
+                        label: Text(t('Home'))),
                     NavigationRailDestination(
-                        icon: Icon(Icons.search), label: Text('Explore')),
+                        icon: const Icon(Icons.forum_outlined),
+                        label: Text(t('Tweets'))),
                     NavigationRailDestination(
-                        icon: Icon(Icons.notifications_none), label: Text('Notifications')),
+                        icon: const Icon(Icons.search),
+                        label: Text(t('Explore'))),
                     NavigationRailDestination(
-                        icon: Icon(Icons.person_outline), label: Text('Account')),
+                        icon: const Icon(Icons.notifications_none),
+                        label: Text(t('Notifications'))),
+                    NavigationRailDestination(
+                        icon: const Icon(Icons.person_outline),
+                        label: Text(t('Profile'))),
                   ],
                 ),
               Expanded(
@@ -192,16 +256,21 @@ class _RumpunShellState extends State<RumpunShell> {
               selectedIndex: _page,
               onDestinationSelected: (i) => setState(() {
                 _page = i;
-                if (i != 3) _profileAccount = null;
+                if (i != 4) _profileAccount = null;
               }),
-              destinations: const [
+              destinations: [
                 NavigationDestination(
-                    icon: Icon(Icons.home_outlined), label: 'Home'),
-                NavigationDestination(icon: Icon(Icons.search), label: 'Explore'),
+                    icon: const Icon(Icons.home_outlined), label: t('Home')),
                 NavigationDestination(
-                    icon: Icon(Icons.notifications_none), label: 'Notifications'),
+                    icon: const Icon(Icons.forum_outlined), label: t('Tweets')),
                 NavigationDestination(
-                    icon: Icon(Icons.person_outline), label: 'Account'),
+                    icon: const Icon(Icons.search), label: t('Explore')),
+                NavigationDestination(
+                    icon: const Icon(Icons.notifications_none),
+                    label: t('Notifications')),
+                NavigationDestination(
+                    icon: const Icon(Icons.person_outline),
+                    label: t('Profile')),
               ],
             ),
     );
@@ -216,6 +285,7 @@ class _RumpunShellState extends State<RumpunShell> {
             if (sheetContext.mounted) Navigator.pop(sheetContext);
             setState(() => _page = 0);
             await _homeKey.currentState?._refresh(silent: true);
+            await _tweetsKey.currentState?.refresh();
           },
         ),
       );
@@ -228,7 +298,7 @@ class _RumpunShellState extends State<RumpunShell> {
       if (!mounted) return;
       setState(() {
         _profileAccount = result;
-        _page = 3;
+        _page = 4;
       });
     } catch (error) {
       if (mounted) _message('Could not load profile: $error');
@@ -239,7 +309,7 @@ class _RumpunShellState extends State<RumpunShell> {
     if (_currentAccount != null) {
       setState(() {
         _profileAccount = _currentAccount;
-        _page = 3;
+        _page = 4;
       });
     } else {
       _login();
@@ -254,15 +324,24 @@ class _RumpunShellState extends State<RumpunShell> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _settings() async {
-    final value = await showDialog<String>(
-      context: context,
-      builder: (_) => _InstanceSettingsDialog(instance: _instance),
-    );
-    if (!mounted) return;
-    // Rebuild even on Cancel: the language dropdown may have changed locale.
-    setState(() {});
-    if (value == null || value.isEmpty) return;
+  /// Settings is reached from Profile, so it opens over the shell instead of
+  /// taking a nav slot.
+  void _settings() => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (routeContext) => Scaffold(
+          appBar: AppBar(title: const Text('Settings')),
+          body: SettingsScreen(
+            instance: _instance,
+            onSaveInstance: _saveInstance,
+            onLogout: () {
+              Navigator.pop(routeContext);
+              _logout();
+            },
+          ),
+        ),
+      ));
+
+  Future<void> _saveInstance(String value) async {
+    if (value.isEmpty) return;
     try {
       final next = FediverseApi(value);
       _instance = next.instance.host;
@@ -273,7 +352,10 @@ class _RumpunShellState extends State<RumpunShell> {
       } else {
         next.close();
       }
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        _message('Default server: $_instance');
+      }
     } catch (error) {
       if (mounted) _message('Invalid server address: $error');
     }
@@ -298,21 +380,35 @@ class _RumpunShellState extends State<RumpunShell> {
 
   void _message(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-
-  Future<void> _settingsFromMenu() => _settings();
 }
 
-class _InstanceSettingsDialog extends StatefulWidget {
-  const _InstanceSettingsDialog({required this.instance});
+/// Full-page settings: default server, language, cache, and account.
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key, required this.instance,
+      required this.onSaveInstance, required this.onLogout});
   final String instance;
-
+  final ValueChanged<String> onSaveInstance;
+  final VoidCallback onLogout;
   @override
-  State<_InstanceSettingsDialog> createState() => _InstanceSettingsDialogState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _InstanceSettingsDialogState extends State<_InstanceSettingsDialog> {
+class _SettingsScreenState extends State<SettingsScreen> {
   late final _controller = TextEditingController(text: widget.instance);
-  late String _language = _appStore?.preferredLanguage ?? 'system';
+  late String _language = _languageTag(_appStore?.preferredLanguage ?? 'system');
+
+  /// Older builds stored the bare `en` / `id`; the dropdown only lists the
+  /// regional tags, and an initialValue outside its items asserts.
+  static String _languageTag(String tag) =>
+      switch (tag.replaceAll('_', '-').toLowerCase()) {
+        'system' => 'system',
+        'en' || 'en-us' => 'en-us',
+        'en-gb' => 'en-gb',
+        'en-sg' => 'en-sg',
+        'id' || 'id-id' => 'id-id',
+        'ja' || 'ja-jp' => 'ja-jp',
+        _ => 'en-us',
+      };
   bool _clearing = false;
 
   @override
@@ -331,82 +427,111 @@ class _InstanceSettingsDialogState extends State<_InstanceSettingsDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Settings'),
-        content: SizedBox(
-          width: 360,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: _controller,
-              decoration: const InputDecoration(labelText: 'Default instance'),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _language,
-              decoration: const InputDecoration(labelText: 'Language'),
-              items: const [
-                DropdownMenuItem(value: 'system', child: Text('System default')),
-                DropdownMenuItem(value: 'en', child: Text('English')),
-                DropdownMenuItem(value: 'id', child: Text('Bahasa Indonesia')),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _language = value);
-                _appStore?.setPreferredLanguage(value);
-              },
-            ),
-            const SizedBox(height: 8),
-            Row(children: [
-              OutlinedButton.icon(
-                onPressed: _clearing ? null : _clearCache,
-                icon: const Icon(Icons.cleaning_services_outlined, size: 18),
-                label: Text(_clearing ? 'Clearing…' : 'Clear cache'),
-              ),
-              const Spacer(),
-              if (_currentAccount != null)
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.error),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    context
-                        .findAncestorStateOfType<_RumpunShellState>()
-                        ?._logout();
-                  },
-                  icon: const Icon(Icons.logout, size: 18),
-                  label: const Text('Log out'),
-                ),
-            ]),
-          ]),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, _controller.text.trim()),
-            child: const Text('Save'),
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          TextField(
+            controller: _controller,
+            decoration: InputDecoration(
+                labelText: t('Default instance'),
+                border: const OutlineInputBorder()),
           ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _language,
+            decoration: InputDecoration(
+                labelText: t('Language'),
+                border: const OutlineInputBorder()),
+            items: [
+              DropdownMenuItem(
+                  value: 'system', child: Text(t('System default'))),
+              DropdownMenuItem(
+                  value: 'en-us', child: Text(t('English (US)'))),
+              DropdownMenuItem(
+                  value: 'en-gb', child: Text(t('English (UK)'))),
+              DropdownMenuItem(
+                  value: 'en-sg', child: Text(t('English (SG)'))),
+              DropdownMenuItem(
+                  value: 'id-id', child: Text(t('Bahasa Indonesia'))),
+              DropdownMenuItem(
+                  value: 'ja-jp', child: Text(t('Japanese'))),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _language = value);
+              _appStore?.setPreferredLanguage(value);
+              // Hot swap: this bumps l10nVersion, and RumpunApp listens, so the
+              // whole tree rebuilds with the new table and locale — no restart.
+              loadL10n(value);
+            },
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: () => widget.onSaveInstance(_controller.text.trim()),
+              child: Text(t('Save')),
+            ),
+          ),
+          const Divider(height: 40),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.cleaning_services_outlined),
+            title: Text(t('Clear cache')),
+            subtitle: Text(t('Cache subtitle')),
+            trailing: _clearing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : null,
+            onTap: _clearing ? null : _clearCache,
+          ),
+          if (_currentAccount != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.logout,
+                  color: Theme.of(context).colorScheme.error),
+              title: Text('Log out',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: widget.onLogout,
+            ),
         ],
       );
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onAccount, required this.onSettings});
+  const _TopBar({required this.title, required this.onAccount,
+      required this.onSettings, this.action});
+  final String title;
   final VoidCallback onAccount;
   final VoidCallback onSettings;
+  final Widget? action;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
         child: Row(children: [
           const Icon(Icons.public, size: 20),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text(_activeApi?.instance.host ?? _instance,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium),
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(_displayHost(_activeApi?.instance.host ?? _instance),
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall),
+                ]),
           ),
-          const SizedBox(width: 8),
+          if (action != null) action!,
           IconButton(
-              tooltip: _currentAccount == null ? 'Log in' : 'My account',
+              tooltip: _currentAccount == null ? t('Log in') : t('My account'),
               onPressed: onAccount,
               icon: _currentAccount == null
                   ? const Icon(Icons.account_circle_outlined)
@@ -419,11 +544,12 @@ class _TopBar extends StatelessWidget {
                     ),
           ),
           IconButton(
-              tooltip: 'Settings',
+              tooltip: t('Settings'),
               onPressed: onSettings,
               icon: const Icon(Icons.settings_outlined)),
         ]),
       );
+  }
 }
 
 class _OAuthCancelled implements Exception {}
@@ -439,6 +565,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   final _text = TextEditingController();
   final _spoiler = TextEditingController();
   final _attachments = <Map<String, dynamic>>[];
+  String _visibility = 'public';
   bool _posting = false;
   String? _error;
   @override
@@ -461,19 +588,24 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     final files = await openFiles(acceptedTypeGroups: [typeGroup]);
     for (final file in files) {
       if (_attachments.length >= 4) break;
-      setState(() => _attachments.add({'path': file.path, 'status': 'uploading'}));
+      // Keep the map itself: indexOf on a fresh literal always returned -1.
+      final entry = <String, dynamic>{
+        'path': file.path,
+        'status': 'uploading'
+      };
+      setState(() => _attachments.add(entry));
       try {
         final media = await _activeApi!.uploadMedia(File(file.path));
-        setState(() => _attachments[_attachments.indexOf(
-            {'path': file.path, 'status': 'uploading'})] = {
-          'path': file.path,
-          'status': 'done',
-          'id': media['id'],
-          'preview': media['preview_url'] as String?,
+        if (!mounted) return;
+        setState(() {
+          entry['status'] = 'done';
+          entry['id'] = media['id'];
+          entry['preview'] = media['preview_url'] as String?;
         });
       } catch (error) {
+        if (!mounted) return;
         setState(() {
-          _attachments.removeWhere((item) => item['path'] == file.path);
+          _attachments.remove(entry);
           _error = 'Upload failed: $error';
         });
       }
@@ -490,6 +622,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     try {
       await _activeApi!.post(
         content.isEmpty ? '.' : content,
+        visibility: _visibility,
         spoilerText: _spoiler.text,
         mediaIds: [
           for (final attachment in _attachments) attachment['id'] as String
@@ -497,6 +630,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
       );
       _text.clear();
       _spoiler.clear();
+      _attachments.clear();
       await widget.onPosted();
     } catch (error) {
       if (mounted) {
@@ -554,6 +688,20 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                 tooltip: 'Attach media',
                 onPressed: _attachments.length >= 4 || _posting ? null : _pickMedia,
                 icon: const Icon(Icons.add_photo_alternate_outlined)),
+            const SizedBox(width: 8),
+            DropdownButton<String>(
+              value: _visibility,
+              underline: const SizedBox.shrink(),
+              onChanged: _posting
+                  ? null
+                  : (value) => setState(() => _visibility = value ?? 'public'),
+              items: const [
+                DropdownMenuItem(value: 'public', child: Text('Public')),
+                DropdownMenuItem(value: 'unlisted', child: Text('Quiet public')),
+                DropdownMenuItem(value: 'private', child: Text('Followers')),
+                DropdownMenuItem(value: 'direct', child: Text('Mentioned only')),
+              ],
+            ),
             const Spacer(),
             FilledButton(
               onPressed: _text.text.trim().isEmpty && _attachments.isEmpty ||
@@ -704,10 +852,14 @@ class _HomeScreenState extends State<HomeScreen> {
   int _feed = 0;
   List<Map<String, dynamic>> _statuses = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
   String? _error;
+  final _scroll = ScrollController();
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onScroll);
     // Show the cached feed instantly; the network refresh then updates it.
     final cached = _appStore?.cachedStatuses('feed-0');
     if (cached != null && cached.isNotEmpty) {
@@ -715,6 +867,45 @@ class _HomeScreenState extends State<HomeScreen> {
       _loading = false;
     }
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scroll.position.extentAfter < 600) _loadMore();
+  }
+
+  /// Fetches the next page with max_id; silent on failure (pull-to-refresh retries).
+  Future<void> _loadMore() async {
+    final api = _activeApi;
+    if (api == null || _loading || _loadingMore || !_hasMore || _statuses.isEmpty) {
+      return;
+    }
+    final lastId = _statuses.last['id'] as String?;
+    if (lastId == null || lastId.isEmpty) return;
+    setState(() => _loadingMore = true);
+    try {
+      final data = await api.timeline(
+          type: _feed == 0 && _currentAccount != null ? 'home' : 'public',
+          local: _feed == 1,
+          maxId: lastId);
+      final seen = {for (final status in _statuses) status['id']};
+      final fresh = data.where((s) => !seen.contains(s['id'])).toList();
+      if (!mounted) return;
+      setState(() {
+        _statuses = [..._statuses, ...fresh];
+        _hasMore = fresh.isNotEmpty;
+      });
+      if (fresh.isNotEmpty) _appStore?.cacheStatuses('feed-$_feed', fresh);
+    } catch (_) {
+      // Keep the current page; the next scroll retries.
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
   }
 
   Future<void> _refresh({bool silent = false}) async {
@@ -729,7 +920,12 @@ class _HomeScreenState extends State<HomeScreen> {
           type: _feed == 0 && _currentAccount != null ? 'home' : 'public',
           local: _feed == 1);
       _appStore?.cacheStatuses('feed-$_feed', data);
-      if (mounted) setState(() => _statuses = data);
+      if (mounted) {
+        setState(() {
+          _statuses = data;
+          _hasMore = data.isNotEmpty;
+        });
+      }
     } catch (error) {
       if (mounted && !silent) setState(() => _error = '$error');
     } finally {
@@ -739,12 +935,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) => Column(children: [
-        _PageTitle(title: _feed == 0 ? 'Home' : 'Public'),
         _TimelineFilter(
           selected: _feed,
-          options: const ['Following', 'Local', 'Federated'],
+          options: [t('Following'), t('Local'), t('Federated')],
           onSelect: (i) {
-            setState(() => _feed = i);
+            setState(() {
+              _feed = i;
+              _hasMore = true;
+            });
             // Cached feed renders instantly; refresh reconciles in the background.
             final cached = _appStore?.cachedStatuses('feed-$i');
             if (cached != null && cached.isNotEmpty) {
@@ -765,21 +963,37 @@ class _HomeScreenState extends State<HomeScreen> {
           child: RefreshIndicator(
             onRefresh: _refresh,
             child: ListView.separated(
+              controller: _scroll,
               padding: const EdgeInsets.all(16),
-              itemCount: _statuses.length,
+              itemCount: _statuses.length + (_loadingMore ? 1 : 0),
               // Ghost feeds the blur-ahead area so scrolling never shows blanks.
               addAutomaticKeepAlives: false,
               addRepaintBoundaries: true,
               separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, i) => _PostTile(
-                post: Post(_statuses[i], _activeApi!.instance.host),
-                onProfile: widget.onOpenProfile,
-                onTap: () => _openThread(context, _statuses[i]),
-              ),
+              itemBuilder: (context, i) => i == _statuses.length
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                          child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2))))
+                  : _PostTile(
+                      post: Post(_statuses[i], _activeApi!.instance.host),
+                      onProfile: widget.onOpenProfile,
+                      onTap: () => _openThread(context, _statuses[i]),
+                    ),
             ),
           ),
         ),
       ]);
+
+  void _openBookmarks() => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => const _BookmarksSheet(),
+      );
 
   Future<void> _openThread(BuildContext context, Map<String, dynamic> status) =>
       showDialog<void>(
@@ -814,6 +1028,182 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
+}
+
+/// Saved posts, fetched fresh each open; bookmarks are account-scoped.
+class _BookmarksSheet extends StatefulWidget {
+  const _BookmarksSheet();
+  @override
+  State<_BookmarksSheet> createState() => _BookmarksSheetState();
+}
+
+class _BookmarksSheetState extends State<_BookmarksSheet> {
+  List<Map<String, dynamic>> _statuses = [];
+  bool _loading = true;
+  String? _error;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _activeApi!.bookmarks();
+      if (mounted) setState(() => _statuses = data);
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('Bookmarks', style: Theme.of(context).textTheme.titleMedium),
+            const Spacer(),
+            IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close)),
+          ]),
+          if (_loading) const LinearProgressIndicator(),
+          if (_error != null) _StateMessage(message: _error!, action: _load),
+          if (_statuses.isEmpty && !_loading && _error == null)
+            const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: Text('No bookmarks yet'))),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.only(bottom: 20),
+              itemCount: _statuses.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, i) => _PostTile(
+                post: Post(_statuses[i], _activeApi!.instance.host),
+                onProfile: (acct) {
+                  // Capture the shell before popping: this sheet's context is
+                  // defunct once the route is gone.
+                  final shell =
+                      context.findAncestorStateOfType<_RumpunShellState>();
+                  Navigator.pop(context);
+                  shell?._openProfile(acct);
+                },
+                onTap: () {},
+              ),
+            ),
+          ),
+        ]),
+      );
+}
+
+/// Your own posts, cached per account so switching pages doesn't refetch.
+class TweetsScreen extends StatefulWidget {
+  const TweetsScreen({super.key, required this.onOpenProfile});
+  final ValueChanged<String> onOpenProfile;
+  @override
+  State<TweetsScreen> createState() => _TweetsScreenState();
+}
+
+class _TweetsScreenState extends State<TweetsScreen> {
+  List<Map<String, dynamic>> _statuses = [];
+  bool _loading = true;
+  String? _error;
+
+  String? get _cacheKey {
+    final id = _currentAccount?['id'];
+    return id is String ? 'tweets-$id' : null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Cached tweets render instantly; the network refresh then reconciles.
+    final cached = _cacheKey == null ? null : _appStore?.cachedStatuses(_cacheKey!);
+    if (cached != null && cached.isNotEmpty) {
+      _statuses = cached;
+      _loading = false;
+    }
+    refresh();
+  }
+
+  @override
+  void didUpdateWidget(covariant TweetsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The account resolves after the first build; pick its tweets up then.
+    if (_statuses.isEmpty) refresh();
+  }
+
+  Future<void> refresh() async {
+    final account = _currentAccount;
+    if (account == null || _activeApi == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final data = await _activeApi!.accountStatuses(account['id'] as String,
+          limit: 40);
+      if (!mounted) return;
+      setState(() {
+        _statuses = data;
+        _loading = false;
+        _error = null;
+      });
+      if (_cacheKey != null) _appStore?.cacheStatuses(_cacheKey!, data);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = '$error';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_currentAccount == null) {
+      return Center(
+          child: FilledButton.tonalIcon(
+              onPressed: () => context
+                  .findAncestorStateOfType<_RumpunShellState>()
+                  ?._openAccount(),
+              icon: const Icon(Icons.login),
+              label: const Text('Log in to see your tweets')));
+    }
+    return Column(children: [
+      if (_loading) const LinearProgressIndicator(),
+      if (_error != null) _StateMessage(message: _error!, action: refresh),
+      Expanded(
+        child: RefreshIndicator(
+          onRefresh: refresh,
+          child: _statuses.isEmpty && !_loading
+              ? ListView(children: const [
+                  Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: Text('No tweets yet')))
+                ])
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _statuses.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) => _PostTile(
+                    post: Post(_statuses[i], _activeApi!.instance.host),
+                    onProfile: widget.onOpenProfile,
+                    onTap: () {},
+                  ),
+                ),
+        ),
+      ),
+    ]);
+  }
 }
 
 class ExploreScreen extends StatefulWidget {
@@ -890,7 +1280,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   @override
   Widget build(BuildContext context) => Column(children: [
-        const _PageTitle(title: 'Explore'),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: SearchBar(
@@ -950,6 +1339,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
     _load();
   }
 
+  /// Public hook for the top-bar refresh action.
+  Future<void> refresh() => _load();
+
   Future<void> _load() async {
     if (_currentAccount == null) {
       setState(() => _loading = false);
@@ -975,14 +1367,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) => Column(children: [
-        _PageTitle(
-            title: 'Notifications',
-            action: _currentAccount == null
-                ? null
-                : IconButton(
-                    tooltip: 'Refresh',
-                    onPressed: _load,
-                    icon: const Icon(Icons.refresh))),
         if (_loading) const LinearProgressIndicator(),
         if (_error != null) _StateMessage(message: _error!, action: _load),
         Expanded(
@@ -1066,6 +1450,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Map<String, dynamic>> _statuses = [];
   bool _loading = true;
   String? _error;
+  /// Null until the relationship is known; the button is hidden until then.
+  bool? _following;
+  bool _followPending = false;
   @override
   void initState() {
     super.initState();
@@ -1075,7 +1462,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void didUpdateWidget(covariant ProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.account?['id'] != widget.account?['id']) _load();
+    if (oldWidget.account?['id'] != widget.account?['id']) {
+      setState(() => _following = null);
+      _load();
+    }
+  }
+
+  /// Only shown for someone else's profile while signed in.
+  Future<void> _loadRelationship(String accountId) async {
+    if (_currentAccount == null || _currentAccountId == accountId) return;
+    try {
+      final rel = await _activeApi!.relationship(accountId);
+      if (mounted) setState(() => _following = rel['following'] == true);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFollow(String accountId) async {
+    final next = !(_following ?? false);
+    setState(() {
+      _following = next;
+      _followPending = true;
+    });
+    try {
+      final result = await _activeApi!.follow(accountId, follow: next);
+      if (mounted) {
+        setState(() => _following =
+            result['following'] == true || result['requested'] == true);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _following = !next);
+    } finally {
+      if (mounted) setState(() => _followPending = false);
+    }
   }
 
   Future<void> _load() async {
@@ -1084,6 +1502,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _loading = false);
       return;
     }
+    _loadRelationship(account['id'] as String);
     try {
       final data = await _activeApi!.accountStatuses(account['id'] as String);
       if (mounted) {
@@ -1112,13 +1531,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final host = acct.contains('@') ? acct.split('@').last : _activeApi!.instance.host;
     final header = account['header'] as String? ?? '';
     return Column(children: [
-      const _PageTitle(title: 'Profile'),
       Expanded(
         child: ListView(padding: const EdgeInsets.all(20), children: [
           _ProfileBanner(header: header, account: account),
           const SizedBox(height: 54),
           Center(child: Text((account['display_name'] as String?)?.isNotEmpty == true ? account['display_name'] as String : account['username'] as String? ?? acct, style: Theme.of(context).textTheme.titleLarge)),
           Center(child: Text('@$acct')),
+          if (_following != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: FilledButton.tonalIcon(
+                  onPressed: _followPending
+                      ? null
+                      : () => _toggleFollow(account['id'] as String),
+                  icon: Icon(_following! ? Icons.person_remove : Icons.person_add),
+                  label: Text(_following! ? t('Unfollow') : t('Follow')),
+                ),
+              ),
+            ),
           if (account['note'] is String && (account['note'] as String).isNotEmpty)
             Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(_plainText(account['note'] as String), textAlign: TextAlign.center)),
           Center(child: Wrap(spacing: 18, children: [
@@ -1129,7 +1560,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (widget.accountId != null)
             Align(alignment: Alignment.centerRight, child: TextButton.icon(
               onPressed: () => showModalBottomSheet<void>(context: context, builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                ListTile(leading: const Icon(Icons.tune), title: const Text('Settings'), onTap: () { Navigator.pop(context); _settings(context); }),
+                ListTile(leading: const Icon(Icons.tune), title: const Text('Settings'), onTap: () {
+                  final shell = context.findAncestorStateOfType<_RumpunShellState>();
+                  Navigator.pop(context);
+                  shell?._settings();
+                }),
                 ListTile(leading: const Icon(Icons.logout), title: const Text('Log out'), onTap: () async { Navigator.pop(context); final shell = context.findAncestorStateOfType<_RumpunShellState>(); await shell?._logout(); }),
               ]))),
               icon: const Icon(Icons.more_horiz), label: const Text('Account'))),
@@ -1145,10 +1580,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ]);
   }
 
-  Future<void> _settings(BuildContext context) async {
-    final shell = context.findAncestorStateOfType<_RumpunShellState>();
-    await shell?._settingsFromMenu();
-  }
 }
 
 class _ProfileBanner extends StatelessWidget {
@@ -1289,20 +1720,8 @@ class _TimelineFilter extends StatelessWidget {
       );
 }
 
-class _PageTitle extends StatelessWidget {
-  const _PageTitle({required this.title, this.action});
-  final String title;
-  final Widget? action;
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
-        child: Row(children: [
-          Text(title, style: Theme.of(context).textTheme.headlineSmall),
-          const Spacer(),
-          if (action != null) action!,
-        ]),
-      );
-}
+/// Host without the noise most instances put in front of it.
+String _displayHost(String host) => host.replaceFirst(RegExp(r'^www\.'), '');
 
 class _StateMessage extends StatelessWidget {
   const _StateMessage({required this.message, required this.action});
@@ -1338,6 +1757,7 @@ class _PostTileState extends State<_PostTile> {
     final spoiler = post.data['spoiler_text'] as String? ?? '';
     final favourited = _optimistic['favourited'] ?? post.data['favourited'] == true;
     final reblogged = _optimistic['reblogged'] ?? post.data['reblogged'] == true;
+    final bookmarked = _optimistic['bookmarked'] ?? post.data['bookmarked'] == true;
     final theme = Theme.of(context);
     final signedIn = _currentAccount != null;
     return Card(
@@ -1360,7 +1780,7 @@ class _PostTileState extends State<_PostTile> {
           ),
           const SizedBox(height: 12),
           if (spoiler.isNotEmpty) _Spoiler(content: post.content, warning: spoiler)
-          else _HtmlText(html: post.content),
+          else _HtmlText(html: post.content, onProfile: widget.onProfile),
           if (attachments.isNotEmpty)
             _MediaGallery(attachments: [
               for (final attachment in attachments)
@@ -1368,18 +1788,24 @@ class _PostTileState extends State<_PostTile> {
                   attachment,
             ]),
           Row(children: [
-            IconButton(tooltip: 'Reply', onPressed: widget.onTap, icon: const Icon(Icons.mode_comment_outlined)),
+            IconButton(tooltip: t('Reply'), onPressed: widget.onTap, icon: const Icon(Icons.mode_comment_outlined)),
             IconButton(
-                tooltip: favourited ? 'Unlike' : 'Like',
+                tooltip: favourited ? t('Unlike') : t('Like'),
                 onPressed: signedIn ? () => _toggle('favourited', favourited, 'like', post.id) : null,
                 icon: Icon(favourited ? Icons.favorite : Icons.favorite_border,
                     color: favourited ? const Color(0xFFE0245E) : null)),
             IconButton(
-                tooltip: reblogged ? 'Undo boost' : 'Boost',
+                tooltip: reblogged ? t('Undo boost') : t('Boost'),
                 onPressed: signedIn ? () => _toggle('reblogged', reblogged, 'repost', post.id) : null,
                 icon: Icon(Icons.repeat, color: reblogged ? _green : null)),
+            IconButton(
+                tooltip: bookmarked ? t('Remove bookmark') : t('Bookmark'),
+                onPressed: signedIn
+                    ? () => _toggle('bookmarked', bookmarked, 'bookmark', post.id)
+                    : null,
+                icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border)),
             const Spacer(),
-            IconButton(tooltip: 'Share', onPressed: () => _share(context, post), icon: const Icon(Icons.ios_share)),
+            IconButton(tooltip: t('Share'), onPressed: () => _share(context, post), icon: const Icon(Icons.ios_share)),
           ]),
         ]),
       ),
@@ -1402,20 +1828,36 @@ Future<void> _share(BuildContext context, Post post) async {
     builder: (sheetContext) => SafeArea(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(
+          leading: const Icon(Icons.share),
+          title: Text(t('Share to…')),
+          onTap: () async {
+            Navigator.pop(sheetContext);
+            try {
+              await SharePlus.instance.share(
+                  ShareParams(text: url, subject: 'Post by ${post.name}'));
+            } catch (error) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Could not share: $error')));
+              }
+            }
+          },
+        ),
+        ListTile(
           leading: const Icon(Icons.link),
-          title: const Text('Copy link'),
+          title: Text(t('Copy link')),
           onTap: () async {
             Navigator.pop(sheetContext);
             await Clipboard.setData(ClipboardData(text: url));
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Link copied')));
+                  SnackBar(content: Text(t('Link copied'))));
             }
           },
         ),
         ListTile(
           leading: const Icon(Icons.open_in_new),
-          title: const Text('Open in browser'),
+          title: Text(t('Open in browser')),
           onTap: () {
             Navigator.pop(sheetContext);
             if (url.isNotEmpty) {
@@ -1446,15 +1888,54 @@ class _SpoilerState extends State<_Spoiler> {
       ]);
 }
 
-class _HtmlText extends StatelessWidget {
-  const _HtmlText({required this.html});
+class _HtmlText extends StatefulWidget {
+  const _HtmlText({required this.html, this.onProfile});
   final String html;
+  final ValueChanged<String>? onProfile;
+  @override
+  State<_HtmlText> createState() => _HtmlTextState();
+}
+
+class _HtmlTextState extends State<_HtmlText> {
+  static final _mentionPattern = RegExp(r'@[\w]+(?:@[\w\.\-]+)?');
+  final _recognizers = <TapGestureRecognizer>{};
+
+  @override
+  void dispose() {
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final text = _plainText(html);
-    // ponytail: SelectionArea over one Text per post; cheaper than per-post
-    // SelectableText (each owns a selection overlay). Upgrade: html renderer.
-    return SelectionArea(child: Text(text));
+    final text = _plainText(widget.html);
+    final onProfile = widget.onProfile;
+    final theme = Theme.of(context);
+    // ponytail: mention spans with per-span recognizers; ifpost bodies ever
+    // need full link/hashtag rendering, switch to an html renderer.
+    if (onProfile == null || !_mentionPattern.hasMatch(text)) {
+      return SelectionArea(child: Text(text));
+    }
+    final spans = <InlineSpan>[];
+    var start = 0;
+    for (final match in _mentionPattern.allMatches(text)) {
+      if (match.start > start) {
+        spans.add(TextSpan(text: text.substring(start, match.start)));
+      }
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () => onProfile(match[0]!.substring(1));
+      _recognizers.add(recognizer);
+      spans.add(TextSpan(
+          text: match[0],
+          style: TextStyle(color: theme.colorScheme.primary),
+          recognizer: recognizer));
+      start = match.end;
+    }
+    if (start < text.length) spans.add(TextSpan(text: text.substring(start)));
+    return SelectionArea(
+        child: Text.rich(TextSpan(style: theme.textTheme.bodyMedium, children: spans)));
   }
 }
 
@@ -1660,7 +2141,14 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
   @override
   void initState() {
     super.initState();
-    _player.open(Media(widget.src));
+    _open();
+  }
+
+  /// Plays from the media cache when it fits; otherwise streams as before.
+  Future<void> _open() async {
+    final local = await CachedNetworkImage.cachedFile(widget.src);
+    if (!mounted) return;
+    await _player.open(Media(local?.path ?? widget.src));
   }
 
   @override

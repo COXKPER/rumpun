@@ -48,6 +48,7 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'social.example');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(find.text('social.example'), findsOneWidget);
+    // Field, top-bar host, and the confirmation snackbar all show it.
+    expect(find.text('social.example'), findsWidgets);
   });
 }

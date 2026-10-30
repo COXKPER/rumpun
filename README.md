@@ -1,9 +1,7 @@
 # rumpun
 
-A minimalist Fediverse (Mastodon-compatible) client for Linux, built with Flutter.
-
-Browse timelines, read threads, view media, and post to any Mastodon-compatible
-instance — signed in or not.
+A minimalist Fediverse (Mastodon-compatible) client for Linux and Android,
+built with Flutter.
 
 ## Features
 
@@ -23,15 +21,16 @@ instance — signed in or not.
 
 ## Security
 
-OAuth tokens live only in the system keyring (Secret Service via
-`flutter_secure_storage`) — never in SQLite, files, or logs. SQLite stores
-account metadata and settings only.
+OAuth tokens live only in the system credential store (Linux keyring / Android
+Keystore via `flutter_secure_storage`) — never in SQLite, files, or logs.
+SQLite stores account metadata and settings only.
 
 ## Requirements
 
-- Flutter SDK (Linux desktop enabled)
+- Flutter SDK (Linux desktop + Android enabled)
 - GTK 3 development libraries
-- `libmpv-dev` and ALSA headers (`libasound2-dev`) for media playback
+- `libmpv-dev` and ALSA headers (`libasound2-dev`) for Linux media playback
+- Android SDK (for the Android build)
 
 ## Build & run
 
@@ -39,6 +38,7 @@ account metadata and settings only.
 make build     # release bundle in build/linux/x64/release/bundle
 make run       # build + launch
 make debug     # debug build
+make apk       # Android debug APK
 ```
 
 ## Development

@@ -107,4 +107,23 @@ void main() {
         code: 'code', redirectUri: 'http://127.0.0.1/callback'),
         throwsA(isA<FediverseException>()));
   });
+
+  test('reads a relationship and posts follow/unfollow', () async {
+    final requests = <http.Request>[];
+    final api = FediverseApi('social.example', client: MockClient((request) async {
+      requests.add(request);
+      if (request.url.path == '/api/v1/accounts/relationships') {
+        return http.Response(jsonEncode([{'id': '7', 'following': true}]), 200);
+      }
+      return http.Response(jsonEncode({'id': '7', 'following': false, 'requested': true}), 200);
+    }));
+    addTearDown(api.close);
+    final rel = await api.relationship('7');
+    expect(rel['following'], true);
+    expect(requests.single.url.queryParameters['id[]'], '7');
+    final result = await api.follow('7', follow: false);
+    expect(result['requested'], true);
+    expect(requests.last.url.path, '/api/v1/accounts/7/unfollow');
+    expect(requests.last.method, 'POST');
+  });
 }

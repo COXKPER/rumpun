@@ -153,6 +153,20 @@ class FediverseApi {
               as List)
           .cast<Map<String, dynamic>>();
 
+  /// `/relationships` answers `following` for many accounts at once; asking
+  /// for a single id keeps the call site simple.
+  Future<Map<String, dynamic>> relationship(String accountId) async =>
+      ((await _request('GET', '/api/v1/accounts/relationships',
+              query: {'id[]': accountId})) as List)
+          .cast<Map<String, dynamic>>()
+          .first;
+
+  /// Follow/unfollow returns a Relationship object with `following` and
+  /// `requested`; a locked account only ever flips `requested`.
+  Future<Map<String, dynamic>> follow(String accountId, {bool follow = true}) async =>
+      (await _request('POST', '/api/v1/accounts/$accountId/${follow ? 'follow' : 'unfollow'}',
+              body: {})) as Map<String, dynamic>;
+
   Future<List<Map<String, dynamic>>> trendingTags({int limit = 10}) async =>
       ((await _request('GET', '/api/v1/trends/tags',
                   query: {'limit': '$limit'}))
@@ -179,6 +193,13 @@ class FediverseApi {
     }) as Map<String, dynamic>;
     return (result['accounts'] as List).cast<Map<String, dynamic>>();
   }
+
+  Future<List<Map<String, dynamic>>> bookmarks({int limit = 20, String? maxId}) async =>
+      ((await _request('GET', '/api/v1/bookmarks', query: {
+        'limit': '$limit',
+        if (maxId != null) 'max_id': maxId,
+      })) as List)
+          .cast<Map<String, dynamic>>();
 
   Future<List<Map<String, dynamic>>> notifications({int limit = 20}) async =>
       ((await _request('GET', '/api/v1/notifications', query: {'limit': '$limit'})) as List)
