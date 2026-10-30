@@ -589,6 +589,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.1"
+  pure_zstd:
+    dependency: "direct main"
+    description:
+      name: pure_zstd
+      sha256: b4010e4c7720ad06bfef4a41a0c6616da3296bef1a277574d34628ef805c9286
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
   record_use:
     dependency: transitive
     description:

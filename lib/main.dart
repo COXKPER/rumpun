@@ -158,12 +158,13 @@ class RumpunShell extends StatefulWidget {
 
 class _RumpunShellState extends State<RumpunShell> {
   final _homeKey = GlobalKey<_HomeScreenState>();
-  final _tweetsKey = GlobalKey<_TweetsScreenState>();
   final _activityKey = GlobalKey<_ActivityScreenState>();
   int _page = 0;
   List<String> get _titles => [
-        t('Home'), t('Tweets'), t('Explore'), t('Notifications'),
-        t('Profile'),
+        t('Home'), t('Explore'), t('Notifications'),
+        // The last tab is your tweets; it only becomes "Profile" when you
+        // open someone else from a post.
+        _profileAccount == null ? t('Tweets') : t('Profile'),
       ];
   Map<String, dynamic>? _profileAccount;
   @override
@@ -171,7 +172,6 @@ class _RumpunShellState extends State<RumpunShell> {
     final wide = MediaQuery.sizeOf(context).width >= 760;
     final pages = [
       HomeScreen(key: _homeKey, onOpenProfile: _openProfile),
-      TweetsScreen(key: _tweetsKey, onOpenProfile: _openProfile),
       ExploreScreen(onOpenProfile: _openProfile),
       ActivityScreen(key: _activityKey),
       _profileAccount == null
@@ -200,11 +200,7 @@ class _RumpunShellState extends State<RumpunShell> {
                       ? null
                       : () => _homeKey.currentState?._openBookmarks(),
                   icon: const Icon(Icons.bookmark_border)),
-              1 => IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: () => _tweetsKey.currentState?.refresh(),
-                  icon: const Icon(Icons.refresh)),
-              3 => IconButton(
+              2 => IconButton(
                   tooltip: 'Refresh',
                   onPressed: () => _activityKey.currentState?.refresh(),
                   icon: const Icon(Icons.refresh)),
@@ -218,15 +214,12 @@ class _RumpunShellState extends State<RumpunShell> {
                   selectedIndex: _page,
                   onDestinationSelected: (i) => setState(() {
                     _page = i;
-                    if (i != 4) _profileAccount = null;
+                    if (i != 3) _profileAccount = null;
                   }),
                   destinations: [
                     NavigationRailDestination(
                         icon: const Icon(Icons.home_outlined),
                         label: Text(t('Home'))),
-                    NavigationRailDestination(
-                        icon: const Icon(Icons.forum_outlined),
-                        label: Text(t('Tweets'))),
                     NavigationRailDestination(
                         icon: const Icon(Icons.search),
                         label: Text(t('Explore'))),
@@ -235,7 +228,9 @@ class _RumpunShellState extends State<RumpunShell> {
                         label: Text(t('Notifications'))),
                     NavigationRailDestination(
                         icon: const Icon(Icons.person_outline),
-                        label: Text(t('Profile'))),
+                        label: Text(_profileAccount == null
+                            ? t('Tweets')
+                            : t('Profile'))),
                   ],
                 ),
               Expanded(
@@ -256,13 +251,11 @@ class _RumpunShellState extends State<RumpunShell> {
               selectedIndex: _page,
               onDestinationSelected: (i) => setState(() {
                 _page = i;
-                if (i != 4) _profileAccount = null;
+                if (i != 3) _profileAccount = null;
               }),
               destinations: [
                 NavigationDestination(
                     icon: const Icon(Icons.home_outlined), label: t('Home')),
-                NavigationDestination(
-                    icon: const Icon(Icons.forum_outlined), label: t('Tweets')),
                 NavigationDestination(
                     icon: const Icon(Icons.search), label: t('Explore')),
                 NavigationDestination(
@@ -270,7 +263,7 @@ class _RumpunShellState extends State<RumpunShell> {
                     label: t('Notifications')),
                 NavigationDestination(
                     icon: const Icon(Icons.person_outline),
-                    label: t('Profile')),
+                    label: _profileAccount == null ? t('Tweets') : t('Profile')),
               ],
             ),
     );
@@ -285,7 +278,6 @@ class _RumpunShellState extends State<RumpunShell> {
             if (sheetContext.mounted) Navigator.pop(sheetContext);
             setState(() => _page = 0);
             await _homeKey.currentState?._refresh(silent: true);
-            await _tweetsKey.currentState?.refresh();
           },
         ),
       );
@@ -1048,13 +1040,24 @@ class _BookmarksSheetState extends State<_BookmarksSheet> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    // Bookmarks are account-scoped, so the key carries the account id.
+    final key = 'bookmarks-${_currentAccountId ?? 'anon'}';
+    final cached = _appStore?.cachedStatuses(key);
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _statuses = cached;
+        _loading = false;
+      });
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final data = await _activeApi!.bookmarks();
       if (mounted) setState(() => _statuses = data);
+      _appStore?.cacheStatuses(key, data);
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     } finally {
@@ -1104,108 +1107,6 @@ class _BookmarksSheetState extends State<_BookmarksSheet> {
       );
 }
 
-/// Your own posts, cached per account so switching pages doesn't refetch.
-class TweetsScreen extends StatefulWidget {
-  const TweetsScreen({super.key, required this.onOpenProfile});
-  final ValueChanged<String> onOpenProfile;
-  @override
-  State<TweetsScreen> createState() => _TweetsScreenState();
-}
-
-class _TweetsScreenState extends State<TweetsScreen> {
-  List<Map<String, dynamic>> _statuses = [];
-  bool _loading = true;
-  String? _error;
-
-  String? get _cacheKey {
-    final id = _currentAccount?['id'];
-    return id is String ? 'tweets-$id' : null;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // Cached tweets render instantly; the network refresh then reconciles.
-    final cached = _cacheKey == null ? null : _appStore?.cachedStatuses(_cacheKey!);
-    if (cached != null && cached.isNotEmpty) {
-      _statuses = cached;
-      _loading = false;
-    }
-    refresh();
-  }
-
-  @override
-  void didUpdateWidget(covariant TweetsScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // The account resolves after the first build; pick its tweets up then.
-    if (_statuses.isEmpty) refresh();
-  }
-
-  Future<void> refresh() async {
-    final account = _currentAccount;
-    if (account == null || _activeApi == null) {
-      if (mounted) setState(() => _loading = false);
-      return;
-    }
-    try {
-      final data = await _activeApi!.accountStatuses(account['id'] as String,
-          limit: 40);
-      if (!mounted) return;
-      setState(() {
-        _statuses = data;
-        _loading = false;
-        _error = null;
-      });
-      if (_cacheKey != null) _appStore?.cacheStatuses(_cacheKey!, data);
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = '$error';
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_currentAccount == null) {
-      return Center(
-          child: FilledButton.tonalIcon(
-              onPressed: () => context
-                  .findAncestorStateOfType<_RumpunShellState>()
-                  ?._openAccount(),
-              icon: const Icon(Icons.login),
-              label: const Text('Log in to see your tweets')));
-    }
-    return Column(children: [
-      if (_loading) const LinearProgressIndicator(),
-      if (_error != null) _StateMessage(message: _error!, action: refresh),
-      Expanded(
-        child: RefreshIndicator(
-          onRefresh: refresh,
-          child: _statuses.isEmpty && !_loading
-              ? ListView(children: const [
-                  Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: Text('No tweets yet')))
-                ])
-              : ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _statuses.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) => _PostTile(
-                    post: Post(_statuses[i], _activeApi!.instance.host),
-                    onProfile: widget.onOpenProfile,
-                    onTap: () {},
-                  ),
-                ),
-        ),
-      ),
-    ]);
-  }
-}
-
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key, required this.onOpenProfile});
   final ValueChanged<String> onOpenProfile;
@@ -1236,6 +1137,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _trending() async {
+    // Trends move slowly; a cached paint beats a spinner on every tab switch.
+    final cached = _appStore?.cachedStatuses('trending');
+    if (cached != null && cached.isNotEmpty) {
+      final snapshot = cached.first;
+      setState(() {
+        _tags = (snapshot['tags'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        _people =
+            (snapshot['people'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        _statuses =
+            (snapshot['statuses'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        _loading = false;
+      });
+    }
     try {
       final api = _activeApi!;
       final results = await Future.wait([
@@ -1251,6 +1165,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
           _loading = false;
         });
       }
+      _appStore?.cacheStatuses('trending', [
+        {'id': 'trending', 'tags': results[0],
+          'people': results[1], 'statuses': results[2]},
+      ]);
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -1347,6 +1265,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
       setState(() => _loading = false);
       return;
     }
+    final key = 'notifications-${_currentAccountId ?? 'anon'}';
+    final cached = _appStore?.cachedStatuses(key);
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _items = cached;
+        _loading = false;
+      });
+    }
     try {
       final items = await _activeApi!.notifications();
       if (mounted) {
@@ -1355,6 +1281,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           _loading = false;
         });
       }
+      _appStore?.cacheStatuses(key, items);
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -1452,6 +1379,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _error;
   /// Null until the relationship is known; the button is hidden until then.
   bool? _following;
+  /// Tweets are the profile's own statuses — no separate page, no nav slot.
+  String? get _cacheKey {
+    final id = widget.account?['id'];
+    return id is String ? 'tweets-$id' : null;
+  }
   bool _followPending = false;
   @override
   void initState() {
@@ -1503,6 +1435,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     _loadRelationship(account['id'] as String);
+    final key = _cacheKey;
+    final cached = key == null ? null : _appStore?.cachedStatuses(key);
+    if (cached != null && cached.isNotEmpty && mounted) {
+      setState(() {
+        _statuses = cached;
+        _loading = false;
+      });
+    }
     try {
       final data = await _activeApi!.accountStatuses(account['id'] as String);
       if (mounted) {
@@ -1511,6 +1451,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _loading = false;
         });
       }
+      if (_cacheKey != null) _appStore?.cacheStatuses(_cacheKey!, data);
     } catch (error) {
       if (mounted) {
         setState(() {

@@ -1,7 +1,8 @@
-import 'dart:convert';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
+
+import 'compress.dart';
 
 /// Small Linux-first store. OAuth tokens deliberately never enter SQLite.
 class AppStore {
@@ -97,7 +98,7 @@ class AppStore {
       for (final status in statuses) {
         final id = status['id'];
         if (id is String && id.isNotEmpty) {
-          batch.execute([id, timeline, jsonEncode(status)]);
+          batch.execute([id, timeline, encodeCache(status)]);
         }
       }
       cacheDb.execute('COMMIT');
@@ -112,7 +113,8 @@ class AppStore {
   List<Map<String, dynamic>> cachedStatuses(String timeline, {int limit = 40}) =>
       cacheDb.select('SELECT payload FROM statuses WHERE timeline=? '
           'ORDER BY cached_at DESC LIMIT ?', [timeline, limit])
-          .map((row) => jsonDecode(row['payload'] as String) as Map<String, dynamic>)
+          .map((row) => decodeCache(row['payload'] as String))
+          .whereType<Map<String, dynamic>>()
           .toList();
 
   void indexMedia({required String url, String? mimeType, String? localPath,
