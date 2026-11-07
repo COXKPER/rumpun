@@ -126,4 +126,56 @@ void main() {
     expect(requests.last.url.path, '/api/v1/accounts/7/unfollow');
     expect(requests.last.method, 'POST');
   });
+
+  test('filters notifications and authorizes follow requests', () async {
+    final requests = <http.Request>[];
+    final api = FediverseApi('social.example', client: MockClient((request) async {
+      requests.add(request);
+      if (request.url.path.contains('/follow_requests/')) {
+        return http.Response(jsonEncode({'id': '9'}), 200);
+      }
+      if (request.url.path.contains('/api/v2/search')) {
+        return http.Response(jsonEncode({'accounts': [], 'hashtags': [], 'statuses': []}), 200);
+      }
+      return http.Response(jsonEncode([]), 200);
+    }));
+    addTearDown(api.close);
+
+    await api.notifications(types: ['mention']);
+    await api.followRequestAuthorize('9', authorize: true);
+    await api.search('tag', type: 'hashtags');
+
+    expect(requests[0].url.queryParameters['types[]'], 'mention');
+    expect(requests[1].url.path, '/api/v1/follow_requests/9/authorize');
+    expect(requests[2].url.queryParameters['type'], 'hashtags');
+  });
+
+  test('posts status with sensitive media and poll options', () async {
+    late Map<String, dynamic> body;
+    final api = FediverseApi('social.example', client: MockClient((request) async {
+      body = jsonDecode(request.body) as Map<String, dynamic>;
+      return http.Response(jsonEncode({'id': '101'}), 200);
+    }));
+    addTearDown(api.close);
+
+    await api.post('Hello', sensitive: true, poll: {'options': ['A', 'B'], 'expires_in': 86400});
+
+    expect(body['status'], 'Hello');
+    expect(body['sensitive'], 'true');
+    expect(body['poll'], {'options': ['A', 'B'], 'expires_in': 86400});
+  });
+
+  test('fetches custom emojis from server', () async {
+    final api = FediverseApi('social.example', client: MockClient((request) async {
+      expect(request.url.path, '/api/v1/custom_emojis');
+      return http.Response(jsonEncode([
+        {'shortcode': 'blobcat', 'url': 'https://social.example/blobcat.png'}
+      ]), 200);
+    }));
+    addTearDown(api.close);
+
+    final emojis = await api.customEmojis();
+    expect(emojis.length, 1);
+    expect(emojis.first['shortcode'], 'blobcat');
+  });
 }

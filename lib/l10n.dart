@@ -9,7 +9,18 @@ var _strings = const <String, String>{};
 
 /// The English text is the key, so a missing entry falls back to English for
 /// free — a partial translation is always usable.
-String t(String key) => _strings[key] ?? key;
+///
+/// Named substitutions come from [args]: `t('Reply to @{name}', args: {'name': 'raka'})`
+/// substitutes every `{name}` in the translated text. Unknown placeholders are
+/// left untouched so a partial translation never drops content.
+String t(String key, {Map<String, String>? args}) {
+  var value = _strings[key] ?? key;
+  if (args == null) return value;
+  for (final entry in args.entries) {
+    value = value.replaceAll('{${entry.key}}', entry.value);
+  }
+  return value;
+}
 
 /// Maps legacy (`en`, `id_ID`), bcp47 (`en-GB`) and `system` onto a table name.
 /// `system` resolves against the platform locale, so the tables follow the

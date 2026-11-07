@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' as ui;
 
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +41,16 @@ AppStore? _appStore;
 Map<String, dynamic>? _currentAccount;
 String? _currentAccountId;
 String _instance = 'mastodon.social';
+List<Map<String, dynamic>> _serverCustomEmojis = [];
+
+Future<void> _loadServerEmojis() async {
+  final api = _activeApi;
+  if (api == null) return;
+  try {
+    final emojis = await api.customEmojis();
+    _serverCustomEmojis = emojis;
+  } catch (_) {}
+}
 
 class RumpunApp extends StatefulWidget {
   const RumpunApp({super.key, this.api, this.store});
@@ -66,7 +78,10 @@ class _RumpunAppState extends State<RumpunApp> {
     loadL10n(store.preferredLanguage);
     if (widget.api != null) {
       _activeApi = widget.api;
-      if (mounted) setState(() => _ready = true);
+      if (mounted) {
+        setState(() => _ready = true);
+        _loadServerEmojis();
+      }
       return;
     }
     final accounts = store.accounts();
@@ -86,7 +101,10 @@ class _RumpunAppState extends State<RumpunApp> {
     } else {
       _activeApi = FediverseApi(_instance);
     }
-    if (mounted) setState(() => _ready = true);
+    if (mounted) {
+      setState(() => _ready = true);
+      _loadServerEmojis();
+    }
   }
 
   /// Resolves the persisted language preference into a locale override.
@@ -101,35 +119,92 @@ class _RumpunAppState extends State<RumpunApp> {
   }
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<int>(
-        valueListenable: l10nVersion,
-        builder: (context, version, _) => MaterialApp(
-        title: 'Fediverse',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: _green),
-          useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xFFFAFAF8),
-          cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-              seedColor: _green, brightness: Brightness.dark),
-          useMaterial3: true,
-        ),
-        locale: _localeOverride,
-        // DefaultMaterialLocalizations is English-only; without these an
-        // `id_ID` locale leaves MaterialLocalizations null and every
-        // TextField crashes on MaterialLocalizations.of.
-        localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        supportedLocales: const [
-          Locale('en', 'US'), Locale('en', 'GB'), Locale('en', 'SG'),
-          Locale('id', 'ID'), Locale('ja', 'JP'),
-        ],
-        home: _ready ? const RumpunShell() : const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
-      ));
+  Widget build(BuildContext context) => DynamicColorBuilder(
+        builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+          final lightScheme = lightDynamic != null
+              ? lightDynamic.harmonized()
+              : ColorScheme.fromSeed(
+                  seedColor: _green,
+                  surface: const Color(0xFFF7F8F6),
+                );
+          final darkScheme = darkDynamic != null
+              ? darkDynamic.harmonized()
+              : ColorScheme.fromSeed(
+                  seedColor: const Color(0xFF83C9AE),
+                  brightness: Brightness.dark,
+                  surface: const Color(0xFF161918),
+                );
+          return ValueListenableBuilder<int>(
+            valueListenable: l10nVersion,
+            builder: (context, version, _) => MaterialApp(
+              title: 'Fediverse',
+              debugShowCheckedModeBanner: false,
+              theme: ThemeData(
+                colorScheme: lightScheme,
+                useMaterial3: true,
+                fontFamily: '.SF Pro Text',
+                scaffoldBackgroundColor: lightScheme.surface,
+                cardTheme: CardThemeData(
+                  color: lightScheme.surfaceContainerLow,
+                  elevation: 0,
+                  margin: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                navigationBarTheme: const NavigationBarThemeData(
+                  elevation: 0,
+                  indicatorShape: StadiumBorder(),
+                ),
+                bottomSheetTheme: const BottomSheetThemeData(
+                  showDragHandle: true,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  ),
+                ),
+                dialogTheme: DialogThemeData(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                ),
+              ),
+              darkTheme: ThemeData(
+                colorScheme: darkScheme,
+                useMaterial3: true,
+                fontFamily: '.SF Pro Text',
+                scaffoldBackgroundColor: darkScheme.surface,
+                cardTheme: CardThemeData(
+                  color: darkScheme.surfaceContainerLow,
+                  elevation: 0,
+                  margin: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                navigationBarTheme: const NavigationBarThemeData(
+                  elevation: 0,
+                  indicatorShape: StadiumBorder(),
+                ),
+                bottomSheetTheme: const BottomSheetThemeData(
+                  showDragHandle: true,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  ),
+                ),
+                dialogTheme: DialogThemeData(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                ),
+              ),
+              locale: _localeOverride,
+              // DefaultMaterialLocalizations is English-only; without these an
+              // `id_ID` locale leaves MaterialLocalizations null and every
+              // TextField crashes on MaterialLocalizations.of.
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              supportedLocales: const [
+                Locale('en', 'US'), Locale('en', 'GB'), Locale('en', 'SG'),
+                Locale('id', 'ID'), Locale('ja', 'JP'),
+              ],
+              home: _ready ? const RumpunShell() : const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          );
+        },
+      );
 }
 
 class Post {
@@ -171,7 +246,7 @@ class _RumpunShellState extends State<RumpunShell> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 760;
     final pages = [
-      HomeScreen(key: _homeKey, onOpenProfile: _openProfile),
+      HomeScreen(key: _homeKey, onOpenProfile: _openProfile, onCompose: _compose),
       ExploreScreen(onOpenProfile: _openProfile),
       ActivityScreen(key: _activityKey),
       _profileAccount == null
@@ -269,18 +344,42 @@ class _RumpunShellState extends State<RumpunShell> {
     );
   }
 
-  Future<void> _compose() => showModalBottomSheet<void>(
+  Future<void> _compose() {
+    final wide = MediaQuery.sizeOf(context).width >= 760;
+    if (wide) {
+      return showDialog<void>(
         context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (sheetContext) => _ComposeSheet(
-          onPosted: () async {
-            if (sheetContext.mounted) Navigator.pop(sheetContext);
-            setState(() => _page = 0);
-            await _homeKey.currentState?._refresh(silent: true);
-          },
+        builder: (dialogContext) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 580),
+            child: SingleChildScrollView(
+              child: _ComposeSheet(
+                onPosted: () async {
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  setState(() => _page = 0);
+                  await _homeKey.currentState?._refresh(silent: true);
+                },
+              ),
+            ),
+          ),
         ),
       );
+    }
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => _ComposeSheet(
+        onPosted: () async {
+          if (sheetContext.mounted) Navigator.pop(sheetContext);
+          setState(() => _page = 0);
+          await _homeKey.currentState?._refresh(silent: true);
+        },
+      ),
+    );
+  }
 
   Future<void> _openProfile(String acct) async {
     final api = _activeApi;
@@ -320,7 +419,7 @@ class _RumpunShellState extends State<RumpunShell> {
   /// taking a nav slot.
   void _settings() => Navigator.of(context).push(MaterialPageRoute<void>(
         builder: (routeContext) => Scaffold(
-          appBar: AppBar(title: const Text('Settings')),
+          appBar: AppBar(title: Text(t('Settings'))),
           body: SettingsScreen(
             instance: _instance,
             onSaveInstance: _saveInstance,
@@ -484,7 +583,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.logout,
                   color: Theme.of(context).colorScheme.error),
-              title: Text('Log out',
+              title: Text(t('Log out'),
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
               onTap: widget.onLogout,
             ),
@@ -502,24 +601,46 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+    final isDark = theme.brightness == Brightness.dark;
+    return Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: (isDark ? const Color(0xFF202422) : Colors.white).withValues(alpha: 0.96),
+          border: Border(
+            bottom: BorderSide(
+              color: theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.12 : 0.10),
+              width: 1,
+            ),
+          ),
+        ),
         child: Row(children: [
           const Icon(Icons.public, size: 20),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
-                  Text(_displayHost(_activeApi?.instance.host ?? _instance),
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall),
-                ]),
+            child: Row(children: [
+              Text(title,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF38A979),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(_displayHost(_activeApi?.instance.host ?? _instance),
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isDark ? const Color(0xFF9AA4A0) : const Color(0xFF6B7470),
+                    )),
+              ),
+            ]),
           ),
           if (action != null) action!,
           IconButton(
@@ -547,8 +668,11 @@ class _TopBar extends StatelessWidget {
 class _OAuthCancelled implements Exception {}
 
 class _ComposeSheet extends StatefulWidget {
-  const _ComposeSheet({required this.onPosted});
+  const _ComposeSheet({required this.onPosted, this.replyTo});
   final Future<void> Function() onPosted;
+  /// Set when the sheet is opened from a post's Reply button; the draft is
+  /// kept under `reply:<statusId>` and the status is posted as a real reply.
+  final Map<String, dynamic>? replyTo;
   @override
   State<_ComposeSheet> createState() => _ComposeSheetState();
 }
@@ -556,18 +680,73 @@ class _ComposeSheet extends StatefulWidget {
 class _ComposeSheetState extends State<_ComposeSheet> {
   final _text = TextEditingController();
   final _spoiler = TextEditingController();
+  final _alt = <TextEditingController>[];
   final _attachments = <Map<String, dynamic>>[];
   String _visibility = 'public';
   bool _posting = false;
   String? _error;
+  bool _hasDraft = false;
+  bool _showMediaWarning = false;
+  bool _spoilerEnabled = false;
+  bool _sensitiveMedia = false;
+  bool _pollEnabled = false;
+  final _pollOptions = [TextEditingController(), TextEditingController()];
+  static final _sensitiveWordPattern = RegExp(r'\b(suicide|kill myself|self[- ]?harm|cutting)\b', caseSensitive: false);
+
+  String get _draftKey => widget.replyTo == null
+      ? 'compose'
+      : 'reply:${widget.replyTo!['id'] ?? ''}';
+  String? get _replyToId => widget.replyTo?['id'] as String?;
+  String? get _replyToName => _replyName(widget.replyTo);
+
+  static String? _replyName(Map<String, dynamic>? status) {
+    final account = status?['account'] as Map<String, dynamic>? ?? {};
+    final name = (account['display_name'] as String?)?.isNotEmpty == true
+        ? account['display_name'] as String?
+        : account['username'] as String?;
+    return name ?? account['acct'] as String?;
+  }
+
   @override
   void initState() {
     super.initState();
-    _text.addListener(() => setState(() {}));
+    // Restore the draft for this slot (a half-written reply survives a tab
+    // switch), then keep it saved as the user types.
+    final draft = _appStore?.draft(_draftKey);
+    if (draft != null) {
+      final text = draft['text'] as String? ?? '';
+      final spoiler = draft['spoiler'] as String? ?? '';
+      _visibility = draft['visibility'] as String? ?? 'public';
+      _spoilerEnabled = spoiler.isNotEmpty;
+      _hasDraft = text.trim().isNotEmpty || spoiler.trim().isNotEmpty;
+      if (text.isNotEmpty) _text.text = text;
+      if (spoiler.isNotEmpty) _spoiler.text = spoiler;
+    }
+    _text.addListener(_onChanged);
+    _spoiler.addListener(_onChanged);
+  }
+
+  void _onChanged() {
+    final hasDraft =
+        _text.text.trim().isNotEmpty || _spoiler.text.trim().isNotEmpty;
+    if (hasDraft != _hasDraft) setState(() => _hasDraft = hasDraft);
+    _appStore?.saveDraft(_draftKey,
+        text: _text.text,
+        spoiler: _spoiler.text,
+        visibility: _visibility,
+        inReplyToId: _replyToId,
+        inReplyToAcct: _replyToName,
+        mediaCount: _attachments.length);
   }
 
   @override
   void dispose() {
+    for (final controller in _alt) {
+      controller.dispose();
+    }
+    for (final controller in _pollOptions) {
+      controller.dispose();
+    }
     _text.dispose();
     _spoiler.dispose();
     super.dispose();
@@ -585,6 +764,8 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         'path': file.path,
         'status': 'uploading'
       };
+      final alt = TextEditingController();
+      _alt.add(alt);
       setState(() => _attachments.add(entry));
       try {
         final media = await _activeApi!.uploadMedia(File(file.path));
@@ -594,35 +775,96 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           entry['id'] = media['id'];
           entry['preview'] = media['preview_url'] as String?;
         });
+        _saveAltDescriptions();
       } catch (error) {
         if (!mounted) return;
         setState(() {
           _attachments.remove(entry);
-          _error = 'Upload failed: $error';
+          _error = t('Upload failed: $error');
         });
       }
     }
   }
 
-  Future<void> _submit() async {
+  void _removeAttachment(int index) {
+    setState(() {
+      _attachments.removeAt(index);
+      _alt.removeAt(index).dispose();
+      // An unsent upload is just dropped; a finished one is abandoned on the
+      // server, where it expires on its own.
+    });
+    _onChanged();
+  }
+
+  /// Pushes typed alt text to the server as each field loses focus. Deferred,
+  /// not streamed, because /api/v1/media PUT is rate-limited.
+  Future<void> _saveAltDescriptions() async {
+    for (final (i, entry) in _attachments.indexed) {
+      if (entry['status'] != 'done') continue;
+      final description = _alt[i].text.trim();
+      if (description.isEmpty || entry['altSaved'] == description) continue;
+      try {
+        await _activeApi!.updateMedia(entry['id'] as String,
+            description: description);
+        entry['altSaved'] = description;
+      } catch (_) {
+        // Alt text is best-effort; the post still goes out without it.
+      }
+    }
+  }
+
+  /// Compose guard from the product spec: images need descriptions, and
+  /// sensitive words need a content warning. Warn once, don't block.
+  bool _checkBeforeSend() {
+    final needsAlt = _attachments.any((entry) =>
+        entry['status'] == 'done' &&
+        (_alt.isEmpty || _alt[_attachments.indexOf(entry)].text.trim().isEmpty));
+    final needsSpoiler = !_spoilerEnabled &&
+        _sensitiveWordPattern.hasMatch(_text.text);
+    if (needsAlt || needsSpoiler) {
+      setState(() => _showMediaWarning = true);
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _submit({bool force = false}) async {
     final content = _text.text.trim();
     if (content.isEmpty && _attachments.isEmpty || _posting) return;
+    if (!force && !_checkBeforeSend()) return;
     setState(() {
       _posting = true;
       _error = null;
+      _showMediaWarning = false;
     });
+    await _saveAltDescriptions();
+    final pollData = _pollEnabled
+        ? {
+            'options': _pollOptions
+                .map((c) => c.text.trim())
+                .where((t) => t.isNotEmpty)
+                .toList(),
+            'expires_in': 86400,
+          }
+        : null;
     try {
       await _activeApi!.post(
         content.isEmpty ? '.' : content,
         visibility: _visibility,
-        spoilerText: _spoiler.text,
+        spoilerText: _spoilerEnabled ? _spoiler.text : null,
+        inReplyToId: _replyToId,
         mediaIds: [
           for (final attachment in _attachments) attachment['id'] as String
         ],
+        sensitive: _sensitiveMedia,
+        poll: (pollData?['options'] as List?)?.length != null &&
+                (pollData!['options'] as List).length >= 2
+            ? pollData
+            : null,
       );
+      _appStore?.deleteDraft(_draftKey);
       _text.clear();
       _spoiler.clear();
-      _attachments.clear();
       await widget.onPosted();
     } catch (error) {
       if (mounted) {
@@ -635,77 +877,340 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final remaining = 500 - _text.text.length;
+    final replyTo = widget.replyTo;
+    return Padding(
         padding: EdgeInsets.fromLTRB(
             20, 16, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text('New post', style: Theme.of(context).textTheme.titleMedium),
+            Text(replyTo == null ? t('New post') : t('Reply to @{name}', args: {'name': _replyToName ?? ''}),
+                style: theme.textTheme.titleMedium),
             const Spacer(),
+            if (_hasDraft)
+              IconButton(
+                  tooltip: t('Discard draft'),
+                  onPressed: _posting
+                      ? null
+                      : () {
+                          _appStore?.deleteDraft(_draftKey);
+                          for (final controller in _alt) {
+                            controller.dispose();
+                          }
+                          _alt.clear();
+                          setState(() {
+                            _attachments.clear();
+                            _text.clear();
+                            _spoiler.clear();
+                            _hasDraft = false;
+                          });
+                        },
+                  icon: const Icon(Icons.delete_outline)),
             IconButton(
-                tooltip: 'Close',
+                tooltip: t('Close'),
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.close)),
           ]),
-          const SizedBox(height: 4),
+          if (replyTo != null)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(_plainText(replyTo['content'] as String? ?? ''),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall)),
           TextField(
               controller: _text,
               autofocus: true,
               minLines: 4,
               maxLines: 8,
               maxLength: 500,
-              decoration:
-                  const InputDecoration(hintText: 'Write a post', border: OutlineInputBorder())),
-          for (final attachment in _attachments)
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.attach_file),
-              title: Text(attachment['path'].toString().split('/').last,
-                  overflow: TextOverflow.ellipsis),
-              trailing: attachment['status'] == 'done'
-                  ? const Icon(Icons.check, color: Colors.green)
-                  : const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
+              decoration: InputDecoration(
+                  hintText: replyTo == null
+                      ? t('Write a post')
+                      : t('Write your reply'),
+                  border: const OutlineInputBorder())),
+          if (_attachments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final (index, attachment) in _attachments.indexed)
+                  Stack(children: [
+                    ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox(
+                            width: 88,
+                            height: 88,
+                            child: Stack(fit: StackFit.expand, children: [
+                              Container(color: theme.colorScheme.surfaceContainerHighest),
+                              if (attachment['preview'] is String)
+                                Image(
+                                    image: CachedNetworkImage(
+                                        attachment['preview'] as String,
+                                        maxWidthPx: 200),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(Icons.image_outlined))
+                              else if (attachment['status'] == 'uploading')
+                                const Center(
+                                    child: SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(strokeWidth: 2))),
+                            ]))),
+                    Positioned(
+                        right: 0, top: 0,
+                        child: IconButton(
+                            tooltip: t('Remove'),
+                            onPressed: _posting ? null : () => _removeAttachment(index),
+                            icon: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                    color: theme.colorScheme.surface.withValues(alpha: 0.85),
+                                    shape: BoxShape.circle),
+                                child: Icon(Icons.close, size: 16, color: theme.colorScheme.onSurface))))
+                  ]),
+              ]),
             ),
-          TextField(
-              controller: _spoiler,
-              decoration: const InputDecoration(
-                  hintText: 'Content warning (optional)',
-                  border: OutlineInputBorder())),
+          // Alt text per attachment: a11y is a product requirement, so the
+          // field sits inline rather than behind a dialog.
+          for (final (index, attachment) in _attachments.indexed)
+            if (attachment['status'] == 'done')
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextField(
+                    controller: _alt[index],
+                    enabled: !_posting,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.accessibility_new, size: 18),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 36),
+                      hintText: t('Describe image for screen readers'),
+                      border: const OutlineInputBorder(),
+                    ))),
+          const SizedBox(height: 10),
+          if (_spoilerEnabled)
+            TextField(
+                controller: _spoiler,
+                enabled: !_posting,
+                decoration: InputDecoration(
+                    isDense: true,
+                    hintText: t('Write a content warning'),
+                    border: const OutlineInputBorder())),
+          if (_pollEnabled)
+            Container(
+              margin: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(children: [
+                for (final (idx, opt) in _pollOptions.indexed)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: TextField(
+                      controller: opt,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: t('Option {index}', args: {'index': '${idx + 1}'}),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                if (_pollOptions.length < 4)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _pollOptions.add(TextEditingController())),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: Text(t('Add option')),
+                    ),
+                  ),
+              ]),
+            ),
+          if (_showMediaWarning)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Card(
+                color: theme.colorScheme.errorContainer,
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(Icons.warning_amber_rounded,
+                        size: 20, color: theme.colorScheme.onErrorContainer),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                          _attachments.any((entry) => entry['status'] == 'done' && _alt.isEmpty)
+                              ? t('Add a description to your images before posting. '
+                                  'People using screen readers cannot see them.')
+                              : t('This post mentions sensitive topics. '
+                                  'Consider adding a content warning.'),
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+                    ),
+                    TextButton(
+                      onPressed: _posting ? null : _submitAnyway,
+                      child: Text(t('Post anyway'),
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+                    ),
+                  ]),
+                ),
+              )),
           if (_error != null)
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error))),
           Row(children: [
             IconButton(
-                tooltip: 'Attach media',
+                tooltip: t('Attach media'),
                 onPressed: _attachments.length >= 4 || _posting ? null : _pickMedia,
                 icon: const Icon(Icons.add_photo_alternate_outlined)),
-            const SizedBox(width: 8),
+            if (_serverCustomEmojis.isNotEmpty)
+              PopupMenuButton<String>(
+                tooltip: t('Custom emojis'),
+                icon: const Icon(Icons.sentiment_satisfied_alt_outlined),
+                onSelected: (code) {
+                  final text = _text.text;
+                  final selection = _text.selection;
+                  final insertion = ' :$code: ';
+                  if (selection.isValid && selection.start >= 0) {
+                    _text.text = text.replaceRange(selection.start, selection.end, insertion);
+                    _text.selection = TextSelection.collapsed(offset: selection.start + insertion.length);
+                  } else {
+                    _text.text = '$text$insertion';
+                    _text.selection = TextSelection.collapsed(offset: _text.text.length);
+                  }
+                  _onChanged();
+                },
+                itemBuilder: (context) => [
+                  for (final emoji in _serverCustomEmojis.take(30))
+                    PopupMenuItem<String>(
+                      value: emoji['shortcode'] as String? ?? '',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (emoji['static_url'] != null || emoji['url'] != null)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Image(
+                                image: CachedNetworkImage(
+                                  (emoji['static_url'] ?? emoji['url']) as String,
+                                  maxWidthPx: 48,
+                                  maxHeightPx: 48,
+                                ),
+                                width: 20,
+                                height: 20,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.tag_faces, size: 20),
+                              ),
+                            ),
+                          Text(':${emoji['shortcode']}:'),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            IconButton(
+                tooltip: t('Poll'),
+                onPressed: _posting
+                    ? null
+                    : () => setState(() => _pollEnabled = !_pollEnabled),
+                icon: Icon(_pollEnabled ? Icons.poll : Icons.poll_outlined,
+                    color: _pollEnabled ? theme.colorScheme.primary : null)),
+            IconButton(
+                tooltip: t('Content warning'),
+                onPressed: _posting
+                    ? null
+                    : () => setState(() {
+                          _spoilerEnabled = !_spoilerEnabled;
+                          if (!_spoilerEnabled) _spoiler.clear();
+                        }),
+                icon: Icon(_spoilerEnabled ? Icons.shield : Icons.shield_outlined,
+                    color: _spoilerEnabled ? theme.colorScheme.primary : null)),
+            if (_attachments.isNotEmpty)
+              IconButton(
+                  tooltip: t('Mark as sensitive'),
+                  onPressed: _posting
+                      ? null
+                      : () => setState(() => _sensitiveMedia = !_sensitiveMedia),
+                  icon: Icon(_sensitiveMedia ? Icons.visibility_off : Icons.visibility_off_outlined,
+                      color: _sensitiveMedia ? theme.colorScheme.error : null)),
+            const SizedBox(width: 4),
             DropdownButton<String>(
               value: _visibility,
               underline: const SizedBox.shrink(),
               onChanged: _posting
                   ? null
-                  : (value) => setState(() => _visibility = value ?? 'public'),
-              items: const [
-                DropdownMenuItem(value: 'public', child: Text('Public')),
-                DropdownMenuItem(value: 'unlisted', child: Text('Quiet public')),
-                DropdownMenuItem(value: 'private', child: Text('Followers')),
-                DropdownMenuItem(value: 'direct', child: Text('Mentioned only')),
+                  : (value) => setState(() {
+                        _visibility = value ?? 'public';
+                        _onChanged();
+                      }),
+              items: [
+                DropdownMenuItem(value: 'public', child: Row(children: [
+                  const Icon(Icons.public, size: 16),
+                  const SizedBox(width: 6),
+                  Text(t('Public')),
+                ])),
+                DropdownMenuItem(value: 'unlisted', child: Row(children: [
+                  const Icon(Icons.lock_open, size: 16),
+                  const SizedBox(width: 6),
+                  Text(t('Quiet public')),
+                ])),
+                DropdownMenuItem(value: 'private', child: Row(children: [
+                  const Icon(Icons.lock_outline, size: 16),
+                  const SizedBox(width: 6),
+                  Text(t('Followers only')),
+                ])),
+                DropdownMenuItem(value: 'direct', child: Row(children: [
+                  const Icon(Icons.alternate_email, size: 16),
+                  const SizedBox(width: 6),
+                  Text(t('Mentioned only')),
+                ])),
               ],
             ),
             const Spacer(),
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    value: (_text.text.length / 500.0).clamp(0.0, 1.0),
+                    strokeWidth: 2.5,
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                    color: remaining < 20
+                        ? theme.colorScheme.error
+                        : remaining < 50
+                            ? Colors.orange
+                            : theme.colorScheme.primary,
+                  ),
+                  if (remaining < 50)
+                    Text('$remaining',
+                        style: theme.textTheme.labelSmall?.copyWith(fontSize: 8)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
             FilledButton(
               onPressed: _text.text.trim().isEmpty && _attachments.isEmpty ||
                       _posting ||
                       _attachments.any((a) => a['status'] != 'done')
                   ? null
                   : _submit,
-              child: Text(_posting ? 'Posting…' : 'Post'),
+              child: Text(_posting ? t('Posting…') : t('Post')),
             ),
           ]),
         ]),
       );
+  }
+
+  Future<void> _submitAnyway() async {
+    setState(() => _showMediaWarning = false);
+    await _submit(force: true);
+  }
 }
 
 class _ConnectDialog extends StatefulWidget {
@@ -809,7 +1314,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Log in'),
+        title: Text(t('Log in')),
         content: SizedBox(
           width: 360,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -825,7 +1330,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
           ]),
         ),
         actions: [
-          TextButton(onPressed: _cancel, child: const Text('Cancel')),
+          TextButton(onPressed: _cancel, child: Text(t('Cancel'))),
           FilledButton(
               onPressed: _busy ? null : _connect,
               child: Text(_busy ? 'Waiting…' : 'Continue')),
@@ -834,8 +1339,9 @@ class _ConnectDialogState extends State<_ConnectDialog> {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.onOpenProfile});
+  const HomeScreen({super.key, required this.onOpenProfile, this.onCompose});
   final ValueChanged<String> onOpenProfile;
+  final VoidCallback? onCompose;
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -945,6 +1451,34 @@ class _HomeScreenState extends State<HomeScreen> {
             _refresh(silent: true);
           },
         ),
+        if (_currentAccount != null && widget.onCompose != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+            child: Card(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: widget.onCompose,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(children: [
+                    _Avatar(account: _currentAccount!, radius: 16),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        t('What do you want to share?'),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.edit_outlined,
+                        size: 20, color: Theme.of(context).colorScheme.primary),
+                  ]),
+                ),
+              ),
+            ),
+          ),
         if (_currentAccount == null)
           const Padding(
               padding: EdgeInsets.symmetric(vertical: 4),
@@ -974,52 +1508,216 @@ class _HomeScreenState extends State<HomeScreen> {
                       post: Post(_statuses[i], _activeApi!.instance.host),
                       onProfile: widget.onOpenProfile,
                       onTap: () => _openThread(context, _statuses[i]),
+                      onReply: (status) =>
+                          _openThread(context, status, focusReply: true),
                     ),
             ),
           ),
         ),
       ]);
 
-  void _openBookmarks() => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (_) => const _BookmarksSheet(),
-      );
-
-  Future<void> _openThread(BuildContext context, Map<String, dynamic> status) =>
+  void _openBookmarks() {
+    final wide = MediaQuery.sizeOf(context).width >= 760;
+    if (wide) {
       showDialog<void>(
         context: context,
-        builder: (_) => FutureBuilder<List<Map<String, dynamic>>>(
-          future: _activeApi?.thread(status['id'] as String? ?? ''),
-          builder: (context, snapshot) => AlertDialog(
-            title: const Text('Conversation'),
-            content: SizedBox(
-              width: 520,
-              child: snapshot.hasError
-                  ? Text('${snapshot.error}')
-                  : snapshot.connectionState != ConnectionState.done
-                      ? const Center(child: CircularProgressIndicator())
-                      : ListView(
-                          shrinkWrap: true,
-                          children: [
-                            ...?snapshot.data?.map((item) => _PostTile(
-                                  post: Post(item, _activeApi!.instance.host),
-                                  onProfile: widget.onOpenProfile,
-                                  onTap: () {},
-                                )),
-                            _PostTile(
-                              post: Post(status, _activeApi!.instance.host),
-                              onProfile: widget.onOpenProfile,
-                              onTap: () {},
-                            ),
-                          ],
-                        ),
-            ),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+        builder: (_) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 580, maxHeight: 680),
+            child: const _BookmarksSheet(),
           ),
         ),
       );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _BookmarksSheet(),
+    );
+  }
+
+  Future<void> _openThread(BuildContext context, Map<String, dynamic> status,
+      {bool focusReply = false}) {
+    final focusId = status['id'] as String? ?? '';
+    return showDialog<void>(
+      context: context,
+      builder: (_) => _ThreadDialog(
+          status: status,
+          focusId: focusId,
+          openReply: focusReply,
+          onProfile: widget.onOpenProfile),
+    );
+  }
+}
+
+/// Conversation view: ancestors above, the opened post highlighted, then
+/// descendants nested one indent per reply level, per DESAIN §2.6.
+class _ThreadDialog extends StatefulWidget {
+  const _ThreadDialog({required this.status, required this.focusId,
+      this.openReply = false, required this.onProfile});
+  final Map<String, dynamic> status;
+  final String focusId;
+  /// Open with the composer already aimed at the focused post.
+  final bool openReply;
+  final ValueChanged<String> onProfile;
+
+  @override
+  State<_ThreadDialog> createState() => _ThreadDialogState();
+}
+
+class _ThreadDialogState extends State<_ThreadDialog> {
+  late Future<List<Map<String, dynamic>>> _thread;
+  @override
+  void initState() {
+    super.initState();
+    _thread = _activeApi!.thread(widget.focusId);
+    if (widget.openReply) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reply(widget.status));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Row(children: [
+        Text(t('Conversation')),
+        const Spacer(),
+        IconButton(
+            tooltip: t('Close'),
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.close)),
+      ]),
+      content: SizedBox(
+        width: 560,
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _thread,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _StateMessage(
+                  message: '${snapshot.error}', action: () => Navigator.pop(context));
+            }
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final items = snapshot.data ?? const <Map<String, dynamic>>[];
+            final ancestors = <Map<String, dynamic>>[];
+            final descendants = <Map<String, dynamic>>[];
+            for (final item in items) {
+              if (item['id'] == widget.focusId) continue;
+              if (item['in_reply_to_id'] == null) {
+                ancestors.add(item);
+              } else {
+                descendants.add(item);
+              }
+            }
+            return CustomScrollView(
+              shrinkWrap: true,
+              slivers: [
+                for (final item in ancestors)
+                  SliverToBoxAdapter(child: Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _PostTile(
+                        post: Post(item, _activeApi!.instance.host),
+                        onProfile: widget.onProfile,
+                        onReply: _reply,
+                        onTap: null),
+                  )),
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                          color: _green.withValues(alpha: 0.7), width: 1.5),
+                      borderRadius: BorderRadius.circular(12)),
+                    child: _PostTile(
+                        post: Post(widget.status, _activeApi!.instance.host),
+                        onProfile: widget.onProfile,
+                        onReply: _reply,
+                        onTap: null),
+                  ),
+                )),
+                for (final entry in _nested(descendants, widget.focusId))
+                  SliverToBoxAdapter(child: Padding(
+                    padding: EdgeInsets.only(
+                        left: 12.0 * entry.depth, bottom: 8),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Container(
+                          width: 2,
+                          margin: const EdgeInsets.only(right: 8, top: 8),
+                          color: theme.dividerColor),
+                      Expanded(child: _PostTile(
+                          post: Post(entry.status, _activeApi!.instance.host),
+                          onProfile: widget.onProfile,
+                          onReply: _reply,
+                          onTap: null)),
+                    ]),
+                  )),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Flattens the descendant forest into (status, depth) pairs by walking
+  /// in_reply_to_id. Mastodon's context is chronological, so a stable
+  /// insertion-ordered DFS is enough.
+  List<_ThreadNode> _nested(List<Map<String, dynamic>> descendants, String rootId) {
+    final byParent = <String, List<Map<String, dynamic>>>{};
+    for (final item in descendants) {
+      final parent = item['in_reply_to_id'] as String? ?? '';
+      byParent.putIfAbsent(parent, () => []).add(item);
+    }
+    final out = <_ThreadNode>[];
+    void walk(String parentId, int depth) {
+      for (final child in byParent[parentId] ?? const <Map<String, dynamic>>[]) {
+        out.add(_ThreadNode(child, depth));
+        walk(child['id'] as String? ?? '', depth + 1);
+      }
+    }
+    walk(rootId, 0);
+    return out;
+  }
+
+  Future<void> _reply(Map<String, dynamic> status) async {
+    final wide = MediaQuery.sizeOf(context).width >= 760;
+    if (wide) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 580),
+            child: SingleChildScrollView(
+              child: _ComposeSheet(replyTo: status, onPosted: () async {}),
+            ),
+          ),
+        ),
+      );
+    } else {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => _ComposeSheet(replyTo: status, onPosted: () async {}),
+      );
+    }
+    // Replying changes reply counts; reload the thread when the sheet closes.
+    if (mounted) setState(() => _thread = _activeApi!.thread(widget.focusId));
+  }
+}
+
+class _ThreadNode {
+  const _ThreadNode(this.status, this.depth);
+  final Map<String, dynamic> status;
+  final int depth;
 }
 
 /// Saved posts, fetched fresh each open; bookmarks are account-scoped.
@@ -1070,19 +1768,19 @@ class _BookmarksSheetState extends State<_BookmarksSheet> {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text('Bookmarks', style: Theme.of(context).textTheme.titleMedium),
+            Text(t('Bookmarks'), style: Theme.of(context).textTheme.titleMedium),
             const Spacer(),
             IconButton(
-                tooltip: 'Close',
+                tooltip: t('Close'),
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.close)),
           ]),
           if (_loading) const LinearProgressIndicator(),
           if (_error != null) _StateMessage(message: _error!, action: _load),
           if (_statuses.isEmpty && !_loading && _error == null)
-            const Padding(
-                padding: EdgeInsets.symmetric(vertical: 32),
-                child: Center(child: Text('No bookmarks yet'))),
+            Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: Text(t('No bookmarks yet')))),
           Flexible(
             child: ListView.separated(
               shrinkWrap: true,
@@ -1181,18 +1879,32 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Future<void> _doSearch(String query) async {
     setState(() {
-      _query = query;
+      _query = query.trim();
       _error = null;
     });
-    if (query.trim().isEmpty) {
-      setState(() => _results = []);
+    if (_query.isEmpty) {
+      _trending();
       return;
     }
+    setState(() => _loading = true);
     try {
-      final data = await _activeApi!.searchAccounts(query.trim());
-      if (mounted) setState(() => _results = data);
+      final type = switch (_category) {
+        'People' => 'accounts',
+        'Tags' => 'hashtags',
+        'Posts' => 'statuses',
+        _ => null,
+      };
+      final data = await _activeApi!.search(_query, type: type);
+      if (mounted) {
+        setState(() {
+          _results = (data['accounts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+          _tags = (data['hashtags'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+          _statuses = (data['statuses'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+          _loading = false;
+        });
+      }
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) setState(() { _error = '$error'; _loading = false; });
     }
   }
 
@@ -1202,41 +1914,66 @@ class _ExploreScreenState extends State<ExploreScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: SearchBar(
             controller: _search,
-            hintText: 'Search accounts',
+            hintText: t('Search accounts, tags, or posts'),
             leading: const Icon(Icons.search),
             onSubmitted: _doSearch,
+            trailing: [
+              if (_search.text.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _search.clear();
+                    setState(() => _query = '');
+                    _trending();
+                  },
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 10),
         SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'Tags', label: Text('Tags')),
-            ButtonSegment(value: 'People', label: Text('People')),
-            ButtonSegment(value: 'Posts', label: Text('Posts')),
+          segments: [
+            ButtonSegment(value: 'Tags', label: Text(t('Tags'))),
+            ButtonSegment(value: 'People', label: Text(t('People'))),
+            ButtonSegment(value: 'Posts', label: Text(t('Posts'))),
           ],
           selected: {_category},
-          onSelectionChanged: (value) => setState(() => _category = value.first),
+          onSelectionChanged: (value) {
+            setState(() => _category = value.first);
+            if (_query.isNotEmpty) _doSearch(_query);
+          },
         ),
         if (_loading) const LinearProgressIndicator(),
         if (_error != null) _StateMessage(message: _error!, action: _trending),
         Expanded(
-          child: _query.isNotEmpty && _category == 'People'
-              ? ListView(children: [for (final account in _results) _AccountRow(account: account, onTap: () => widget.onOpenProfile(account['acct'] as String? ?? ''))])
-              : ListView(children: [
-                  if (_category == 'Tags')
-                    for (final tag in _tags)
-                      ListTile(
-                        leading: const Icon(Icons.tag),
-                        title: Text(tag['name'] as String? ?? ''),
-                        subtitle: Text('${tag['history']?.length ?? 0} recent posts'),
-                      ),
-                  if (_category == 'People' && _query.isEmpty)
-                    for (final item in _people)
-                      _AccountRow(account: item['account'] as Map<String, dynamic>? ?? item, onTap: () => widget.onOpenProfile((item['account'] as Map<String, dynamic>?)?['acct'] as String? ?? '')),
-                  if (_category == 'Posts')
-                    for (final status in _statuses)
-                      _PostTile(post: Post(status, _activeApi!.instance.host), onProfile: widget.onOpenProfile, onTap: () {}),
-                ]),
+          child: ListView(children: [
+            if (_category == 'People')
+              for (final account in (_query.isNotEmpty ? _results : _people))
+                _AccountRow(
+                  account: account['account'] as Map<String, dynamic>? ?? account,
+                  onTap: () => widget.onOpenProfile(
+                      (account['account'] as Map<String, dynamic>?)?['acct'] as String? ??
+                      account['acct'] as String? ?? ''),
+                ),
+            if (_category == 'Tags')
+              for (final tag in _tags)
+                ListTile(
+                  leading: const Icon(Icons.tag),
+                  title: Text(tag['name'] as String? ?? ''),
+                  subtitle: Text('${tag['history']?.length ?? 0} ${t('posts')}'),
+                  onTap: () {
+                    final name = tag['name'] as String? ?? '';
+                    _search.text = name;
+                    _doSearch(name);
+                  },
+                ),
+            if (_category == 'Posts')
+              for (final status in _statuses)
+                _PostTile(
+                  post: Post(status, _activeApi!.instance.host),
+                  onProfile: widget.onOpenProfile,
+                ),
+          ]),
         ),
       ]);
 }
@@ -1248,6 +1985,7 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
+  int _segment = 0;
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   String? _error;
@@ -1265,7 +2003,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       setState(() => _loading = false);
       return;
     }
-    final key = 'notifications-${_currentAccountId ?? 'anon'}';
+    final key = 'notifications-${_currentAccountId ?? 'anon'}-$_segment';
     final cached = _appStore?.cachedStatuses(key);
     if (cached != null && cached.isNotEmpty) {
       setState(() {
@@ -1274,7 +2012,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
       });
     }
     try {
-      final items = await _activeApi!.notifications();
+      final types = switch (_segment) {
+        1 => const ['mention'],
+        2 => const ['favourite', 'reblog'],
+        _ => null,
+      };
+      final items = await _activeApi!.notifications(types: types);
       if (mounted) {
         setState(() {
           _items = items;
@@ -1292,8 +2035,44 @@ class _ActivityScreenState extends State<ActivityScreen> {
     }
   }
 
+  Future<void> _dismiss(String id) async {
+    setState(() => _items.removeWhere((item) => item['id'] == id));
+    try {
+      await _activeApi?.dismissNotification(id);
+    } catch (_) {}
+  }
+
+  Future<void> _handleFollowRequest(String accountId, String notificationId, bool authorize) async {
+    try {
+      await _activeApi?.followRequestAuthorize(accountId, authorize: authorize);
+      if (mounted) {
+        setState(() => _items.removeWhere((item) => item['id'] == notificationId));
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) => Column(children: [
+        if (_currentAccount != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: SegmentedButton<int>(
+              segments: [
+                ButtonSegment(value: 0, label: Text(t('All'))),
+                ButtonSegment(value: 1, label: Text(t('Mentions'))),
+                ButtonSegment(value: 2, label: Text(t('Likes / Reposts'))),
+              ],
+              selected: {_segment},
+              onSelectionChanged: (value) {
+                setState(() {
+                  _segment = value.first;
+                  _items = [];
+                  _loading = true;
+                });
+                _load();
+              },
+            ),
+          ),
         if (_loading) const LinearProgressIndicator(),
         if (_error != null) _StateMessage(message: _error!, action: _load),
         Expanded(
@@ -1305,26 +2084,40 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     shell?._openAccount();
                   },
                   icon: const Icon(Icons.login),
-                  label: const Text('Log in to see notifications')))
+                  label: Text(t('Log in to see notifications'))))
               : _items.isEmpty && !_loading
-                  ? const Center(child: Text('No notifications yet'))
+                  ? Center(child: Text(t('No notifications yet')))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView(children: [
                         for (final item in _items)
-                          _NotificationTile(item: item),
+                          _NotificationTile(
+                            item: item,
+                            onDismiss: () => _dismiss(item['id'] as String? ?? ''),
+                            onAuthorize: (auth) {
+                              final acct = item['account'] as Map<String, dynamic>? ?? {};
+                              _handleFollowRequest(
+                                acct['id'] as String? ?? '',
+                                item['id'] as String? ?? '',
+                                auth,
+                              );
+                            },
+                          ),
                       ]),
                     ),
         ),
       ]);
 }
 
-/// Maps Mastodon notification types to readable text and icons.
+/// Maps Mastodon notification types to readable text and action-specific icons.
 class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.item});
+  const _NotificationTile({required this.item, this.onDismiss, this.onAuthorize});
   final Map<String, dynamic> item;
+  final VoidCallback? onDismiss;
+  final ValueChanged<bool>? onAuthorize;
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final account = item['account'] as Map<String, dynamic>? ?? {};
     final name = (account['display_name'] as String?)?.isNotEmpty == true
         ? account['display_name'] as String
@@ -1333,32 +2126,78 @@ class _NotificationTile extends StatelessWidget {
             'Someone';
     final status = item['status'] as Map<String, dynamic>?;
     final type = item['type'] as String? ?? '';
-    final (icon, text) = switch (type) {
-      'follow' => (Icons.person_add_alt, 'followed you'),
-      'favourite' => (Icons.favorite_border, 'liked your post'),
-      'reblog' => (Icons.repeat, 'boosted your post'),
-      'mention' => (Icons.alternate_email, 'mentioned you'),
-      'poll' => (Icons.poll_outlined, 'poll ended'),
-      'follow_request' => (Icons.person_add_alt_1_outlined, 'requested to follow you'),
-      'status' => (Icons.notifications_none, 'posted'),
-      'update' => (Icons.edit_outlined, 'edited a post'),
-      'admin.sign_up' => (Icons.how_to_reg_outlined, 'signed up'),
-      _ => (Icons.notifications_none, type.isEmpty ? 'activity' : type),
+    final (icon, color, text) = switch (type) {
+      'follow' => (Icons.person_add, const Color(0xFF38A979), t('followed you')),
+      'favourite' => (Icons.star, const Color(0xFFE0245E), t('liked your post')),
+      'reblog' => (Icons.repeat, _green, t('boosted your post')),
+      'mention' => (Icons.chat_bubble_outline, const Color(0xFF1D9BF0), t('mentioned you')),
+      'poll' => (Icons.poll_outlined, theme.colorScheme.onSurface, t('poll ended')),
+      'follow_request' => (Icons.person_add_alt_1_outlined, const Color(0xFFF59E0B), t('requested to follow you')),
+      'status' => (Icons.notifications_none, theme.colorScheme.onSurface, t('posted')),
+      _ => (Icons.notifications_none, theme.colorScheme.onSurface, type.isEmpty ? 'activity' : type),
     };
     return ListTile(
-      leading: _Avatar(account: account),
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _Avatar(account: account),
+          Positioned(
+            right: -2,
+            bottom: -2,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 14, color: color),
+            ),
+          ),
+        ],
+      ),
       title: Text.rich(TextSpan(children: [
         TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w600)),
         TextSpan(text: ' $text'),
       ])),
-      subtitle: status != null
-          ? Text(_plainText(status['content'] as String? ?? ''),
-              maxLines: 1, overflow: TextOverflow.ellipsis)
-          : null,
-      trailing: status != null
-          ? Text(_relativeTime(status['created_at'] as String?),
-              style: Theme.of(context).textTheme.bodySmall)
-          : null,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (status != null)
+            Text(_plainText(status['content'] as String? ?? ''),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          if (type == 'follow_request' && onAuthorize != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(children: [
+                FilledButton.tonal(
+                  onPressed: () => onAuthorize!(true),
+                  child: Text(t('Accept')),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => onAuthorize!(false),
+                  child: Text(t('Reject')),
+                ),
+              ]),
+            ),
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (status != null)
+            Text(_relativeTime(status['created_at'] as String?),
+                style: theme.textTheme.bodySmall),
+          if (onDismiss != null)
+            IconButton(
+              tooltip: t('Dismiss'),
+              icon: const Icon(Icons.close, size: 16),
+              visualDensity: VisualDensity.compact,
+              onPressed: onDismiss,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1379,10 +2218,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _error;
   /// Null until the relationship is known; the button is hidden until then.
   bool? _following;
+  int _contentTab = 0;
   /// Tweets are the profile's own statuses — no separate page, no nav slot.
   String? get _cacheKey {
     final id = widget.account?['id'];
-    return id is String ? 'tweets-$id' : null;
+    return id is String ? 'tweets-$id-$_contentTab' : null;
   }
   bool _followPending = false;
   @override
@@ -1444,7 +2284,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     }
     try {
-      final data = await _activeApi!.accountStatuses(account['id'] as String);
+      final data = await _activeApi!.accountStatuses(
+        account['id'] as String,
+        excludeReplies: _contentTab == 0,
+        onlyMedia: _contentTab == 2,
+      );
       if (mounted) {
         setState(() {
           _statuses = data;
@@ -1466,7 +2310,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final account = widget.account;
     if (account == null) {
-      return const Center(child: Text('Choose Log in to connect an account.'));
+      return Center(child: Text(t('Choose Log in to connect an account.')));
     }
     final acct = account['acct'] as String? ?? '';
     final host = acct.contains('@') ? acct.split('@').last : _activeApi!.instance.host;
@@ -1494,28 +2338,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (account['note'] is String && (account['note'] as String).isNotEmpty)
             Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(_plainText(account['note'] as String), textAlign: TextAlign.center)),
           Center(child: Wrap(spacing: 18, children: [
-            Text('${account['statuses_count'] ?? 0} posts'),
-            Text('${account['following_count'] ?? 0} following'),
-            Text('${account['followers_count'] ?? 0} followers'),
+            Text('${account['statuses_count'] ?? 0} ${t('posts')}'),
+            Text('${account['following_count'] ?? 0} ${t('following')}'),
+            Text('${account['followers_count'] ?? 0} ${t('followers')}'),
           ])),
+          const SizedBox(height: 12),
+          SegmentedButton<int>(
+            segments: [
+              ButtonSegment(value: 0, label: Text(t('Posts'))),
+              ButtonSegment(value: 1, label: Text(t('Replies'))),
+              ButtonSegment(value: 2, label: Text(t('Media'))),
+            ],
+            selected: {_contentTab},
+            onSelectionChanged: (value) {
+              setState(() {
+                _contentTab = value.first;
+                _statuses = [];
+                _loading = true;
+              });
+              _load();
+            },
+          ),
           if (widget.accountId != null)
             Align(alignment: Alignment.centerRight, child: TextButton.icon(
               onPressed: () => showModalBottomSheet<void>(context: context, builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                ListTile(leading: const Icon(Icons.tune), title: const Text('Settings'), onTap: () {
+                ListTile(leading: const Icon(Icons.tune), title: Text(t('Settings')), onTap: () {
                   final shell = context.findAncestorStateOfType<_RumpunShellState>();
                   Navigator.pop(context);
                   shell?._settings();
                 }),
-                ListTile(leading: const Icon(Icons.logout), title: const Text('Log out'), onTap: () async { Navigator.pop(context); final shell = context.findAncestorStateOfType<_RumpunShellState>(); await shell?._logout(); }),
+                ListTile(leading: const Icon(Icons.logout), title: Text(t('Log out')), onTap: () async { Navigator.pop(context); final shell = context.findAncestorStateOfType<_RumpunShellState>(); await shell?._logout(); }),
               ]))),
-              icon: const Icon(Icons.more_horiz), label: const Text('Account'))),
+              icon: const Icon(Icons.more_horiz), label: Text(t('Account')))),
           const Divider(height: 28),
           if (_loading) const LinearProgressIndicator(),
           if (_error != null) Text('Could not load posts: $_error'),
           if (_statuses.isEmpty && !_loading && _error == null)
-            const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('No posts yet'))),
+            Center(child: Padding(padding: const EdgeInsets.all(20), child: Text(t('No posts yet')))),
           for (final status in _statuses)
-            _PostTile(post: Post(status, host), onProfile: widget.onOpenProfile, onTap: () {}),
+            _PostTile(post: Post(status, host), onProfile: widget.onOpenProfile),
         ]),
       ),
     ]);
@@ -1669,20 +2530,79 @@ class _StateMessage extends StatelessWidget {
   final String message;
   final VoidCallback action;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          Expanded(child: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis)),
-          TextButton(onPressed: action, child: const Text('Retry')),
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cleanMessage = message.replaceFirst(RegExp(r'^(Exception|FediverseException):\s*'), '');
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxWidth: 440),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.cloud_off_rounded,
+                  size: 32,
+                  color: theme.colorScheme.error,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                t('Something went wrong'),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                cleanMessage,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.tonalIcon(
+                onPressed: action,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(t('Retry')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _PostTile extends StatefulWidget {
-  const _PostTile({required this.post, required this.onProfile, required this.onTap});
+  const _PostTile({required this.post, required this.onProfile,
+      this.onReply, this.onTap});
   final Post post;
   final ValueChanged<String> onProfile;
-  final VoidCallback onTap;
+  /// Opens the composer pre-set to reply to this status.
+  final ValueChanged<Map<String, dynamic>>? onReply;
+  final VoidCallback? onTap;
   @override
   State<_PostTile> createState() => _PostTileState();
 }
@@ -1696,9 +2616,11 @@ class _PostTileState extends State<_PostTile> {
   Widget build(BuildContext context) {
     final attachments = post.data['media_attachments'] as List<dynamic>? ?? const [];
     final spoiler = post.data['spoiler_text'] as String? ?? '';
+    final sensitive = post.data['sensitive'] == true;
     final favourited = _optimistic['favourited'] ?? post.data['favourited'] == true;
     final reblogged = _optimistic['reblogged'] ?? post.data['reblogged'] == true;
     final bookmarked = _optimistic['bookmarked'] ?? post.data['bookmarked'] == true;
+    final emojis = (post.data['emojis'] as List<dynamic>?) ?? const [];
     final theme = Theme.of(context);
     final signedIn = _currentAccount != null;
     return Card(
@@ -1714,31 +2636,58 @@ class _PostTileState extends State<_PostTile> {
               const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(post.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(post.handle, style: theme.textTheme.bodySmall),
+                if (post.acct.contains('@'))
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('@${post.acct.split('@').first}', style: theme.textTheme.bodySmall),
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        post.acct.split('@').last,
+                        style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+                      ),
+                    ),
+                  ])
+                else
+                  Text(post.handle, style: theme.textTheme.bodySmall),
               ])),
               Text(_relativeTime(post.data['created_at'] as String?), style: theme.textTheme.bodySmall),
             ]),
           ),
           const SizedBox(height: 12),
-          if (spoiler.isNotEmpty) _Spoiler(content: post.content, warning: spoiler)
-          else _HtmlText(html: post.content, onProfile: widget.onProfile),
+          if (spoiler.isNotEmpty)
+            _Spoiler(content: post.content, warning: spoiler, emojis: emojis)
+          else
+            _HtmlText(html: post.content, emojis: emojis, onProfile: widget.onProfile),
           if (attachments.isNotEmpty)
             _MediaGallery(attachments: [
               for (final attachment in attachments)
                 if (attachment is Map<String, dynamic> && attachment['url'] != null)
                   attachment,
-            ]),
+            ], sensitive: sensitive && spoiler.isEmpty),
           Row(children: [
-            IconButton(tooltip: t('Reply'), onPressed: widget.onTap, icon: const Icon(Icons.mode_comment_outlined)),
-            IconButton(
+            _ActionCount(
+                tooltip: t('Reply'),
+                onPressed: _handleReply,
+                icon: const Icon(Icons.mode_comment_outlined, size: 20),
+                count: (post.data['replies_count'] as num?)?.toInt()),
+            _ActionCount(
                 tooltip: favourited ? t('Unlike') : t('Like'),
                 onPressed: signedIn ? () => _toggle('favourited', favourited, 'like', post.id) : null,
                 icon: Icon(favourited ? Icons.favorite : Icons.favorite_border,
-                    color: favourited ? const Color(0xFFE0245E) : null)),
-            IconButton(
+                    size: 20, color: favourited ? const Color(0xFFE0245E) : null),
+                count: (post.data['favourites_count'] as num?)?.toInt(),
+                highlighted: favourited),
+            _ActionCount(
                 tooltip: reblogged ? t('Undo boost') : t('Boost'),
                 onPressed: signedIn ? () => _toggle('reblogged', reblogged, 'repost', post.id) : null,
-                icon: Icon(Icons.repeat, color: reblogged ? _green : null)),
+                icon: Icon(Icons.repeat, size: 20, color: reblogged ? _green : null),
+                count: (post.data['reblogs_count'] as num?)?.toInt(),
+                highlighted: reblogged),
             IconButton(
                 tooltip: bookmarked ? t('Remove bookmark') : t('Bookmark'),
                 onPressed: signedIn
@@ -1753,6 +2702,44 @@ class _PostTileState extends State<_PostTile> {
     );
   }
 
+  void _handleReply() {
+    if (!signedInGate(context)) return;
+    final onReply = widget.onReply;
+    if (onReply != null) {
+      onReply(post.data);
+    } else {
+      // The tile can live outside a thread (feeds, profiles); the reply goes
+      // out the same way, just without the conversation around it.
+      _openReply();
+    }
+  }
+
+  Future<void> _openReply() async {
+    final wide = MediaQuery.sizeOf(context).width >= 760;
+    if (wide) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 580),
+            child: SingleChildScrollView(
+              child: _ComposeSheet(replyTo: post.data, onPosted: () async {}),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _ComposeSheet(replyTo: post.data, onPosted: () async {}),
+    );
+  }
+
   /// Calls the API, then flips the flag locally so the icon reacts instantly.
   Future<void> _toggle(String flag, bool on, String action, String id) async {
     try {
@@ -1762,59 +2749,124 @@ class _PostTileState extends State<_PostTile> {
   }
 }
 
+/// Reply/like/boost need an account; offer to sign in instead of a dead button.
+bool signedInGate(BuildContext context) {
+  if (_currentAccount != null) return true;
+  ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t('Log in to reply, like, and share'))));
+  return false;
+}
+
+/// Icon button with a live count beside it, the shape every feed client uses
+/// for reply/like/boost. Compact mode (count > 0 only) keeps the bar calm.
+class _ActionCount extends StatelessWidget {
+  const _ActionCount({required this.tooltip, required this.onPressed,
+      required this.icon, required this.count, this.highlighted = false});
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final int? count;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = count == null || count == 0 ? '' : _compactNumber(count!);
+    return MergeSemantics(
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+            tooltip: label.isEmpty ? tooltip : '$tooltip · $label',
+            onPressed: onPressed,
+            icon: icon,
+            visualDensity: VisualDensity.compact),
+        if (label.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: Text(label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: highlighted ? theme.colorScheme.primary : null)),
+          ),
+      ]),
+    );
+  }
+}
+
+String _compactNumber(int value) {
+  if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
+  if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
+  return '$value';
+}
+
 Future<void> _share(BuildContext context, Post post) async {
   final url = post.data['url'] as String? ?? '';
-  await showModalBottomSheet<void>(
-    context: context,
-    builder: (sheetContext) => SafeArea(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(
-          leading: const Icon(Icons.share),
-          title: Text(t('Share to…')),
-          onTap: () async {
-            Navigator.pop(sheetContext);
-            try {
-              await SharePlus.instance.share(
-                  ShareParams(text: url, subject: 'Post by ${post.name}'));
-            } catch (error) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Could not share: $error')));
-              }
-            }
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.link),
-          title: Text(t('Copy link')),
-          onTap: () async {
-            Navigator.pop(sheetContext);
-            await Clipboard.setData(ClipboardData(text: url));
+  final wide = MediaQuery.sizeOf(context).width >= 760;
+  Widget buildItems(BuildContext ctx) => SafeArea(
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      ListTile(
+        leading: const Icon(Icons.share),
+        title: Text(t('Share to…')),
+        onTap: () async {
+          Navigator.pop(ctx);
+          try {
+            await SharePlus.instance.share(
+                ShareParams(text: url, subject: 'Post by ${post.name}'));
+          } catch (error) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(t('Link copied'))));
+                  SnackBar(content: Text('Could not share: $error')));
             }
-          },
+          }
+        },
+      ),
+      ListTile(
+        leading: const Icon(Icons.link),
+        title: Text(t('Copy link')),
+        onTap: () async {
+          Navigator.pop(ctx);
+          await Clipboard.setData(ClipboardData(text: url));
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(t('Link copied'))));
+          }
+        },
+      ),
+      ListTile(
+        leading: const Icon(Icons.open_in_new),
+        title: Text(t('Open in browser')),
+        onTap: () {
+          Navigator.pop(ctx);
+          if (url.isNotEmpty) {
+            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+          }
+        },
+      ),
+    ]),
+  );
+
+  if (wide) {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: buildItems(dialogContext),
         ),
-        ListTile(
-          leading: const Icon(Icons.open_in_new),
-          title: Text(t('Open in browser')),
-          onTap: () {
-            Navigator.pop(sheetContext);
-            if (url.isNotEmpty) {
-              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-            }
-          },
-        ),
-      ]),
-    ),
+      ),
+    );
+    return;
+  }
+  await showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) => buildItems(sheetContext),
   );
 }
 
 class _Spoiler extends StatefulWidget {
-  const _Spoiler({required this.content, required this.warning});
+  const _Spoiler({required this.content, required this.warning, this.emojis = const []});
   final String content;
   final String warning;
+  final List<dynamic> emojis;
   @override
   State<_Spoiler> createState() => _SpoilerState();
 }
@@ -1822,23 +2874,41 @@ class _Spoiler extends StatefulWidget {
 class _SpoilerState extends State<_Spoiler> {
   bool _show = false;
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(widget.warning, style: const TextStyle(fontWeight: FontWeight.w600)),
-        TextButton(onPressed: () => setState(() => _show = !_show), child: Text(_show ? 'Hide sensitive content' : 'Show sensitive content')),
-        if (_show) _HtmlText(html: widget.content),
-      ]);
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+        decoration: BoxDecoration(
+            color: theme.colorScheme.errorContainer.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(8)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.shield_outlined, size: 16,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
+          const SizedBox(width: 6),
+          Flexible(child: Text(widget.warning,
+              style: const TextStyle(fontWeight: FontWeight.w600))),
+        ]),
+      ),
+      TextButton.icon(
+          onPressed: () => setState(() => _show = !_show),
+          icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+          label: Text(_show ? t('Hide sensitive content') : t('Show sensitive content'))),
+      if (_show) _HtmlText(html: widget.content, emojis: widget.emojis),
+    ]);
+  }
 }
 
 class _HtmlText extends StatefulWidget {
-  const _HtmlText({required this.html, this.onProfile});
+  const _HtmlText({required this.html, this.emojis = const [], this.onProfile});
   final String html;
+  final List<dynamic> emojis;
   final ValueChanged<String>? onProfile;
   @override
   State<_HtmlText> createState() => _HtmlTextState();
 }
 
 class _HtmlTextState extends State<_HtmlText> {
-  static final _mentionPattern = RegExp(r'@[\w]+(?:@[\w\.\-]+)?');
   final _recognizers = <TapGestureRecognizer>{};
 
   @override
@@ -1849,34 +2919,81 @@ class _HtmlTextState extends State<_HtmlText> {
     super.dispose();
   }
 
+  Map<String, String> _buildEmojiMap() {
+    final map = <String, String>{};
+    for (final item in widget.emojis) {
+      if (item is Map<String, dynamic>) {
+        final code = item['shortcode'] as String?;
+        final url = (item['static_url'] ?? item['url']) as String?;
+        if (code != null && url != null) map[code] = url;
+      }
+    }
+    for (final item in _serverCustomEmojis) {
+      final code = item['shortcode'] as String?;
+      final url = (item['static_url'] ?? item['url']) as String?;
+      if (code != null && url != null) map.putIfAbsent(code, () => url);
+    }
+    return map;
+  }
+
+  List<InlineSpan> _parseSpans(String text, TextStyle? style, ValueChanged<String>? onProfile, Map<String, String> emojiMap) {
+    final spans = <InlineSpan>[];
+    var start = 0;
+    final combinedPattern = RegExp(r'(@[\w]+(?:@[\w\.\-]+)?)|(:[a-zA-Z0-9_]+:)');
+    for (final match in combinedPattern.allMatches(text)) {
+      if (match.start > start) {
+        spans.add(TextSpan(text: text.substring(start, match.start), style: style));
+      }
+      final matchedText = match[0]!;
+      if (matchedText.startsWith('@') && onProfile != null) {
+        final recognizer = TapGestureRecognizer()
+          ..onTap = () => onProfile(matchedText.substring(1));
+        _recognizers.add(recognizer);
+        spans.add(TextSpan(
+          text: matchedText,
+          style: style?.copyWith(color: Theme.of(context).colorScheme.primary),
+          recognizer: recognizer,
+        ));
+      } else if (matchedText.startsWith(':') && matchedText.endsWith(':')) {
+        final code = matchedText.substring(1, matchedText.length - 1);
+        final url = emojiMap[code];
+        if (url != null) {
+          spans.add(WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Image(
+                image: CachedNetworkImage(url, maxWidthPx: 48, maxHeightPx: 48),
+                width: 18,
+                height: 18,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Text(matchedText, style: style),
+              ),
+            ),
+          ));
+        } else {
+          spans.add(TextSpan(text: matchedText, style: style));
+        }
+      } else {
+        spans.add(TextSpan(text: matchedText, style: style));
+      }
+      start = match.end;
+    }
+    if (start < text.length) {
+      spans.add(TextSpan(text: text.substring(start), style: style));
+    }
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = _plainText(widget.html);
-    final onProfile = widget.onProfile;
     final theme = Theme.of(context);
-    // ponytail: mention spans with per-span recognizers; ifpost bodies ever
-    // need full link/hashtag rendering, switch to an html renderer.
-    if (onProfile == null || !_mentionPattern.hasMatch(text)) {
-      return SelectionArea(child: Text(text));
-    }
-    final spans = <InlineSpan>[];
-    var start = 0;
-    for (final match in _mentionPattern.allMatches(text)) {
-      if (match.start > start) {
-        spans.add(TextSpan(text: text.substring(start, match.start)));
-      }
-      final recognizer = TapGestureRecognizer()
-        ..onTap = () => onProfile(match[0]!.substring(1));
-      _recognizers.add(recognizer);
-      spans.add(TextSpan(
-          text: match[0],
-          style: TextStyle(color: theme.colorScheme.primary),
-          recognizer: recognizer));
-      start = match.end;
-    }
-    if (start < text.length) spans.add(TextSpan(text: text.substring(start)));
+    final emojiMap = _buildEmojiMap();
+    final spans = _parseSpans(text, theme.textTheme.bodyMedium, widget.onProfile, emojiMap);
     return SelectionArea(
-        child: Text.rich(TextSpan(style: theme.textTheme.bodyMedium, children: spans)));
+      child: Text.rich(TextSpan(style: theme.textTheme.bodyMedium, children: spans)),
+    );
   }
 }
 
@@ -1903,8 +3020,11 @@ String _relativeTime(String? value) {
 /// Inline gallery for a post's media. Tapping a tile opens the fullscreen
 /// preview; the play affordance lives there, not inline.
 class _MediaGallery extends StatelessWidget {
-  const _MediaGallery({required this.attachments});
+  const _MediaGallery({required this.attachments, this.sensitive = false});
   final List<Map<String, dynamic>> attachments;
+  /// Server-flagged sensitive media with no CW text: blurred until tapped,
+  /// unlike a CW which hides the whole post behind [_Spoiler].
+  final bool sensitive;
   @override
   Widget build(BuildContext context) {
     if (attachments.isEmpty) return const SizedBox.shrink();
@@ -1948,6 +3068,7 @@ class _MediaGallery extends StatelessWidget {
                             Shadow(blurRadius: 8, color: Colors.black54)
                           ]),
                         ),
+                      if (sensitive) const _SensitiveScrim(),
                     ]),
                   ),
                 ),
@@ -1975,6 +3096,44 @@ class _MediaGallery extends StatelessWidget {
   }
 }
 
+/// Blur scrim over server-flagged sensitive media. Tapping the tile still
+/// opens the fullscreen view — the user opted in by tapping.
+class _SensitiveScrim extends StatefulWidget {
+  const _SensitiveScrim();
+  @override
+  State<_SensitiveScrim> createState() => _SensitiveScrimState();
+}
+
+class _SensitiveScrimState extends State<_SensitiveScrim> {
+  bool _revealed = false;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (_revealed) return const SizedBox.shrink();
+    return GestureDetector(
+      onTap: () => setState(() => _revealed = true),
+      child: Stack(fit: StackFit.expand, children: [
+        BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+            child: Container(color: theme.colorScheme.surface.withValues(alpha: 0.25))),
+        Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.visibility_off_outlined, size: 26,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+            const SizedBox(height: 6),
+            Text(t('Sensitive content'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.75))),
+            Text(t('Tap to show'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
 /// Fullscreen viewer: swipeable pages, alt text, and open-in-browser.
 class _MediaPreview extends StatefulWidget {
   const _MediaPreview({required this.attachments, required this.initialIndex});
@@ -1997,17 +3156,17 @@ class _MediaPreviewState extends State<_MediaPreview> {
           if (_altText.isNotEmpty)
             IconButton(
                 icon: const Icon(Icons.closed_caption_outlined),
-                tooltip: 'Alt text',
+                tooltip: t('Description'),
                 onPressed: () => showDialog<void>(
                     context: context,
                     builder: (_) => AlertDialog(
-                        title: const Text('Description'),
+                        title: Text(t('Description')),
                         content: Text(_altText),
                         actions: [TextButton(
                             onPressed: () => Navigator.pop(context),
-                            child: const Text('Close'))]))),
+                            child: Text(t('Close')))]))),
           IconButton(
-              tooltip: 'Open in browser',
+              tooltip: t('Open in browser'),
               onPressed: () => launchUrl(
                   Uri.parse(_current['url'] as String),
                   mode: LaunchMode.externalApplication),

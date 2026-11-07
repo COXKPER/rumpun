@@ -114,13 +114,17 @@ class FediverseApi {
   }
 
   Future<Map<String, dynamic>> post(String content, {String visibility = 'public',
-      String? spoilerText, String? inReplyToId, List<String> mediaIds = const []}) async =>
+      String? spoilerText, String? inReplyToId, List<String> mediaIds = const [],
+      bool sensitive = false, String? language, Map<String, dynamic>? poll}) async =>
       (await _request('POST', '/api/v1/statuses', body: {
         'status': content,
         'visibility': visibility,
+        if (sensitive) 'sensitive': 'true',
+        if (language != null) 'language': language,
         if (spoilerText?.isNotEmpty == true) 'spoiler_text': spoilerText,
         if (inReplyToId != null) 'in_reply_to_id': inReplyToId,
         if (mediaIds.isNotEmpty) 'media_ids': mediaIds,
+        if (poll != null) 'poll': poll,
       })) as Map<String, dynamic>;
 
   Future<Map<String, dynamic>> action(String statusId, String action) async {
@@ -135,9 +139,12 @@ class FediverseApi {
         as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> search(String query) async =>
-      (await _request('GET', '/api/v2/search', query: {'q': query, 'resolve': 'true'}))
-          as Map<String, dynamic>;
+  Future<Map<String, dynamic>> search(String query, {String? type}) async =>
+      (await _request('GET', '/api/v2/search', query: {
+        'q': query,
+        if (type != null) 'type': type,
+        'resolve': 'true',
+      })) as Map<String, dynamic>;
 
   Future<Map<String, dynamic>> currentUser() async =>
       (await _request('GET', '/api/v1/accounts/verify_credentials')) as Map<String, dynamic>;
@@ -147,9 +154,13 @@ class FediverseApi {
           as Map<String, dynamic>;
 
   Future<List<Map<String, dynamic>>> accountStatuses(String accountId,
-          {int limit = 20}) async =>
+          {int limit = 20, bool excludeReplies = true, bool onlyMedia = false}) async =>
       ((await _request('GET', '/api/v1/accounts/$accountId/statuses',
-                  query: {'limit': '$limit', 'exclude_replies': 'true'}))
+                  query: {
+                    'limit': '$limit',
+                    'exclude_replies': '$excludeReplies',
+                    if (onlyMedia) 'only_media': 'true',
+                  }))
               as List)
           .cast<Map<String, dynamic>>();
 
@@ -201,8 +212,35 @@ class FediverseApi {
       })) as List)
           .cast<Map<String, dynamic>>();
 
-  Future<List<Map<String, dynamic>>> notifications({int limit = 20}) async =>
-      ((await _request('GET', '/api/v1/notifications', query: {'limit': '$limit'})) as List)
+  Future<List<Map<String, dynamic>>> notifications({int limit = 20,
+      String? maxId, List<String>? types, List<String>? excludeTypes}) async =>
+      ((await _request('GET', '/api/v1/notifications', query: {
+        'limit': '$limit',
+        if (maxId != null) 'max_id': maxId,
+        for (final type in types ?? const <String>[]) 'types[]': type,
+        for (final type in excludeTypes ?? const <String>[]) 'exclude_types[]': type,
+      })) as List)
+          .cast<Map<String, dynamic>>();
+
+  Future<Map<String, dynamic>> followRequestAuthorize(String accountId,
+          {required bool authorize}) async =>
+      (await _request('POST',
+          '/api/v1/follow_requests/$accountId/${authorize ? 'authorize' : 'reject'}',
+          body: {})) as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> updateMedia(String mediaId,
+          {String? description}) async =>
+      (await _request('PUT', '/api/v1/media/$mediaId',
+              body: description == null
+                  ? const <String, dynamic>{}
+                  : <String, dynamic>{'description': description}))
+          as Map<String, dynamic>;
+
+  Future<void> dismissNotification(String notificationId) async =>
+      _request('DELETE', '/api/v1/notifications/$notificationId');
+
+  Future<List<Map<String, dynamic>>> customEmojis() async =>
+      ((await _request('GET', '/api/v1/custom_emojis')) as List)
           .cast<Map<String, dynamic>>();
 
   Future<List<Map<String, dynamic>>> thread(String statusId) async {

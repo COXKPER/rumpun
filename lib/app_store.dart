@@ -89,6 +89,41 @@ class AppStore {
     mainDb.execute('DELETE FROM accounts WHERE id=?', [id]);
   }
 
+  /// One composer draft per key: `compose` for a new post, `reply:<statusId>`
+  /// for a thread reply. Media descriptions are not persisted: uploads are
+  /// per-session server state and re-attaching them needs a re-upload.
+  void saveDraft(String key, {String text = '', String spoiler = '',
+      String visibility = 'public', String? inReplyToId,
+      String? inReplyToAcct, int mediaCount = 0}) {
+    mainDb.execute('''INSERT INTO drafts(key, text, spoiler, visibility,
+      in_reply_to_id, in_reply_to_acct, media_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET text=excluded.text, spoiler=excluded.spoiler,
+      visibility=excluded.visibility, in_reply_to_id=excluded.in_reply_to_id,
+      in_reply_to_acct=excluded.in_reply_to_acct,
+      media_count=excluded.media_count, saved_at=CURRENT_TIMESTAMP''',
+      [key, text, spoiler, visibility, inReplyToId, inReplyToAcct, mediaCount]);
+  }
+
+  Map<String, dynamic>? draft(String key) {
+    final rows = mainDb.select('SELECT text, spoiler, visibility, '
+        'in_reply_to_id, in_reply_to_acct, media_count FROM drafts WHERE key=?', [key]);
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    return {
+      'text': row['text'] as String? ?? '',
+      'spoiler': row['spoiler'] as String? ?? '',
+      'visibility': row['visibility'] as String? ?? 'public',
+      'in_reply_to_id': row['in_reply_to_id'] as String?,
+      'in_reply_to_acct': row['in_reply_to_acct'] as String?,
+      'media_count': row['media_count'] as int? ?? 0,
+    };
+  }
+
+  void deleteDraft(String key) {
+    mainDb.execute('DELETE FROM drafts WHERE key=?', [key]);
+  }
+
   void cacheStatuses(String timeline, List<Map<String, dynamic>> statuses) {
     final batch = cacheDb.prepare('''INSERT INTO statuses(id, timeline, payload)
       VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET timeline=excluded.timeline,
