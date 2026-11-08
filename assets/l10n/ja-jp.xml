@@ -108,4 +108,19 @@
   <string name="Public timeline · Sign in to follow accounts and post">公開タイムライン · ログインしてフォローや投稿をしましょう</string>
   <string name="You">あなた</string>
   <string name="Trending">トレンド</string>
+  <string name="More">その他</string>
+  <string name="Save image">画像を保存</string>
+  <string name="Saved to">保存先:</string>
+  <string name="Theme">テーマ</string>
+  <string name="Light">ライト</string>
+  <string name="Dark">ダーク</string>
+  <string name="Default visibility">デフォルトの公開範囲</string>
+  <string name="Push notifications (FCM)">プッシュ通知 (FCM)</string>
+  <string name="Receive background alerts for mentions, likes, and reposts">メンション・いいね・ブーストのバックグラウンド通知を受け取る</string>
+  <string name="FCM / UnifiedPush endpoint">FCM / UnifiedPush エンドポイント</string>
+  <string name="Always show sensitive media">センシティブなメディアを常に表示</string>
+  <string name="Compact timeline cards">コンパクトなカード表示</string>
+  <string name="Cache cleared">キャッシュを消去しました</string>
+  <string name="Post published">投稿しました</string>
+  <string name="Push subscription updated">プッシュ通知設定を更新しました</string>
 </strings>

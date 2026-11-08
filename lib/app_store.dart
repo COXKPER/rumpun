@@ -53,26 +53,32 @@ class AppStore {
       key TEXT PRIMARY KEY, value INTEGER NOT NULL DEFAULT 0)''');
   }
 
-  String get preferredInstance {
-    final rows = mainDb.select("SELECT value FROM settings WHERE key='instance'");
-    return rows.isEmpty ? 'mastodon.social' : rows.first['value'] as String;
+  String setting(String key, [String fallback = '']) {
+    final rows = mainDb.select('SELECT value FROM settings WHERE key=?', [key]);
+    return rows.isEmpty ? fallback : rows.first['value'] as String;
   }
 
-  void setPreferredInstance(String instance) {
-    mainDb.execute('''INSERT INTO settings(key, value) VALUES ('instance', ?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value''', [instance]);
+  void setSetting(String key, String value) {
+    mainDb.execute('''INSERT INTO settings(key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value''', [key, value]);
   }
+
+  bool boolSetting(String key, {bool fallback = false}) {
+    final v = setting(key, fallback ? 'true' : 'false');
+    return v == 'true' || v == '1';
+  }
+
+  void setBoolSetting(String key, bool value) =>
+      setSetting(key, value ? 'true' : 'false');
+
+  String get preferredInstance => setting('instance', 'mastodon.social');
+
+  void setPreferredInstance(String instance) => setSetting('instance', instance);
 
   /// UI language tag; 'system' follows the platform locale.
-  String get preferredLanguage {
-    final rows = mainDb.select("SELECT value FROM settings WHERE key='language'");
-    return rows.isEmpty ? 'system' : rows.first['value'] as String;
-  }
+  String get preferredLanguage => setting('language', 'system');
 
-  void setPreferredLanguage(String language) {
-    mainDb.execute('''INSERT INTO settings(key, value) VALUES ('language', ?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value''', [language]);
-  }
+  void setPreferredLanguage(String language) => setSetting('language', language);
 
   /// Drops cached timelines; media file cache is wiped by the caller.
   void clearCaches() {

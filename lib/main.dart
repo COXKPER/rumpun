@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -42,6 +43,8 @@ Map<String, dynamic>? _currentAccount;
 String? _currentAccountId;
 String _instance = 'mastodon.social';
 List<Map<String, dynamic>> _serverCustomEmojis = [];
+final ValueNotifier<int> _appConfigVersion = ValueNotifier<int>(0);
+final ValueNotifier<int> _unreadNotifications = ValueNotifier<int>(0);
 
 Future<void> _loadServerEmojis() async {
   final api = _activeApi;
@@ -118,6 +121,13 @@ class _RumpunAppState extends State<RumpunApp> {
         : Locale(parts[0]);
   }
 
+  ThemeMode get _themeMode =>
+      switch (_appStore?.setting('theme_mode', 'system')) {
+        'light' => ThemeMode.light,
+        'dark' => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
+
   @override
   Widget build(BuildContext context) => DynamicColorBuilder(
         builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
@@ -134,11 +144,12 @@ class _RumpunAppState extends State<RumpunApp> {
                   brightness: Brightness.dark,
                   surface: const Color(0xFF161918),
                 );
-          return ValueListenableBuilder<int>(
-            valueListenable: l10nVersion,
-            builder: (context, version, _) => MaterialApp(
+          return ListenableBuilder(
+            listenable: Listenable.merge([l10nVersion, _appConfigVersion]),
+            builder: (context, _) => MaterialApp(
               title: 'Fediverse',
               debugShowCheckedModeBanner: false,
+              themeMode: _themeMode,
               scrollBehavior: const MaterialScrollBehavior().copyWith(
                 dragDevices: {
                   PointerDeviceKind.touch,
@@ -151,6 +162,11 @@ class _RumpunAppState extends State<RumpunApp> {
                 useMaterial3: true,
                 fontFamily: '.SF Pro Text',
                 scaffoldBackgroundColor: lightScheme.surface,
+                snackBarTheme: SnackBarThemeData(
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  showCloseIcon: true,
+                ),
                 cardTheme: CardThemeData(
                   color: lightScheme.surfaceContainerLow,
                   elevation: 0,
@@ -176,6 +192,11 @@ class _RumpunAppState extends State<RumpunApp> {
                 useMaterial3: true,
                 fontFamily: '.SF Pro Text',
                 scaffoldBackgroundColor: darkScheme.surface,
+                snackBarTheme: SnackBarThemeData(
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  showCloseIcon: true,
+                ),
                 cardTheme: CardThemeData(
                   color: darkScheme.surfaceContainerLow,
                   elevation: 0,
@@ -250,6 +271,57 @@ class _RumpunShellState extends State<RumpunShell> {
   final _tweetsKey = GlobalKey<_TweetsScreenState>();
   final _activityKey = GlobalKey<_ActivityScreenState>();
   int _page = 0;
+  Timer? _pushTimer;
+  String? _lastNotificationId;
+
+  @override
+  void initState() {
+    super.initState();
+    _pushTimer = Timer.periodic(
+        const Duration(seconds: 45), (_) => _pollPushNotifications());
+  }
+
+  @override
+  void dispose() {
+    _pushTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _pollPushNotifications() async {
+    if (_currentAccount == null) return;
+    if (!(_appStore?.boolSetting('push_enabled', fallback: true) ?? true)) return;
+    try {
+      final items = await _activeApi!.notifications(limit: 5);
+      if (!mounted || items.isEmpty) return;
+      final newestId = items.first['id'] as String?;
+      if (newestId != null && newestId != _lastNotificationId) {
+        final isFirstSeen = _lastNotificationId == null;
+        _lastNotificationId = newestId;
+        if (_page != 3) {
+          _unreadNotifications.value = items.length;
+        }
+        if (!isFirstSeen && mounted) {
+          final acct = items.first['account'] as Map<String, dynamic>? ?? {};
+          final who = (acct['display_name'] as String?)?.isNotEmpty == true
+              ? acct['display_name'] as String
+              : acct['username'] as String? ?? 'Someone';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$who · ${t('Notifications')}'),
+              action: SnackBarAction(
+                label: t('Notifications'),
+                onPressed: () => setState(() {
+                  _page = 3;
+                  _unreadNotifications.value = 0;
+                }),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
   List<String> get _titles => [
         t('Home'),
         t('Tweets'),
@@ -282,132 +354,193 @@ class _RumpunShellState extends State<RumpunShell> {
     void selectTab(int i) {
       if (i == 0 && _page == 0) _homeKey.currentState?._scrollToTop();
       if (i == 1 && _page == 1) _tweetsKey.currentState?._scrollToTop();
+      if (i == 3) _unreadNotifications.value = 0;
       setState(() {
         _page = i;
         _profileAccount = null;
       });
     }
 
-    return Scaffold(
-      floatingActionButton: _currentAccount == null
-          ? null
-          : FloatingActionButton(
-              tooltip: 'New post',
-              onPressed: _compose,
-              child: const Icon(Icons.add)),
-      body: SafeArea(
-        child: Column(children: [
-          _TopBar(
-            title: _titles[_page],
-            onAccount: _openAccount,
-            onSettings: _settings,
-            action: switch (_page) {
-              0 => IconButton(
-                  tooltip: 'Bookmarks',
-                  onPressed: _currentAccount == null
-                      ? null
-                      : () => _homeKey.currentState?._openBookmarks(),
-                  icon: const Icon(Icons.bookmark_border)),
-              1 => IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: () => _tweetsKey.currentState?.refresh(),
-                  icon: const Icon(Icons.refresh)),
-              3 => IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: () => _activityKey.currentState?.refresh(),
-                  icon: const Icon(Icons.refresh)),
-              _ => null,
-            },
-          ),
-          Expanded(
-            child: Row(children: [
-              if (wide)
-                Container(
-                  decoration: BoxDecoration(
-                    color: chromeColor,
-                    border: Border(right: BorderSide(color: borderColor)),
-                  ),
-                  child: NavigationRail(
-                    backgroundColor: Colors.transparent,
-                    minWidth: 84,
-                    labelType: NavigationRailLabelType.all,
-                    indicatorColor: theme.colorScheme.primaryContainer,
-                    indicatorShape: const StadiumBorder(),
-                    selectedIndex: _page,
-                    onDestinationSelected: selectTab,
-                    destinations: [
-                      NavigationRailDestination(
-                          icon: const Icon(Icons.home_outlined),
-                          selectedIcon: const Icon(Icons.home_rounded),
-                          label: Text(t('Home'))),
-                      NavigationRailDestination(
-                          icon: const Icon(Icons.forum_outlined),
-                          selectedIcon: const Icon(Icons.forum_rounded),
-                          label: Text(t('Tweets'))),
-                      NavigationRailDestination(
-                          icon: const Icon(Icons.explore_outlined),
-                          selectedIcon: const Icon(Icons.explore_rounded),
-                          label: Text(t('Explore'))),
-                      NavigationRailDestination(
-                          icon: const Icon(Icons.notifications_none_rounded),
-                          selectedIcon: const Icon(Icons.notifications_rounded),
-                          label: Text(t('Notifications'))),
-                      NavigationRailDestination(
-                          icon: const Icon(Icons.person_outline_rounded),
-                          selectedIcon: const Icon(Icons.person_rounded),
-                          label: Text(youLabel)),
-                    ],
-                  ),
+    return ValueListenableBuilder<int>(
+      valueListenable: _unreadNotifications,
+      builder: (context, unreadCount, _) => Scaffold(
+        appBar: _TopBar(
+          title: _titles[_page],
+          onAccount: _openAccount,
+          onSettings: _settings,
+          onBookmarks: _currentAccount == null
+              ? null
+              : () => _homeKey.currentState?._openBookmarks(),
+          onRefresh: () {
+            if (_page == 0) _homeKey.currentState?._refresh();
+            if (_page == 1) _tweetsKey.currentState?.refresh();
+            if (_page == 3) _activityKey.currentState?.refresh();
+          },
+          action: switch (_page) {
+            0 => IconButton(
+                tooltip: 'Bookmarks',
+                onPressed: _currentAccount == null
+                    ? null
+                    : () => _homeKey.currentState?._openBookmarks(),
+                icon: const Icon(Icons.bookmark_border)),
+            1 => IconButton(
+                tooltip: 'Refresh',
+                onPressed: () => _tweetsKey.currentState?.refresh(),
+                icon: const Icon(Icons.refresh)),
+            3 => IconButton(
+                tooltip: 'Refresh',
+                onPressed: () => _activityKey.currentState?.refresh(),
+                icon: const Icon(Icons.refresh)),
+            _ => null,
+          },
+        ),
+        floatingActionButton: _currentAccount == null
+            ? null
+            : FloatingActionButton.extended(
+                tooltip: 'New post',
+                onPressed: _compose,
+                icon: const Icon(Icons.edit_outlined),
+                label: Text(t('Post'))),
+        body: SafeArea(
+          child: Row(children: [
+            if (wide)
+              Container(
+                decoration: BoxDecoration(
+                  color: chromeColor,
+                  border: Border(right: BorderSide(color: borderColor)),
                 ),
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 780),
-                    child: pages[_page],
-                  ),
+                child: NavigationRail(
+                  backgroundColor: Colors.transparent,
+                  minWidth: 84,
+                  labelType: NavigationRailLabelType.all,
+                  indicatorColor: theme.colorScheme.primaryContainer,
+                  indicatorShape: const StadiumBorder(),
+                  selectedIndex: _page,
+                  onDestinationSelected: selectTab,
+                  destinations: [
+                    NavigationRailDestination(
+                        icon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.home_outlined)),
+                        selectedIcon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.home_rounded)),
+                        label: Text(t('Home'))),
+                    NavigationRailDestination(
+                        icon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.forum_outlined)),
+                        selectedIcon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.forum_rounded)),
+                        label: Text(t('Tweets'))),
+                    NavigationRailDestination(
+                        icon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.explore_outlined)),
+                        selectedIcon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.explore_rounded)),
+                        label: Text(t('Explore'))),
+                    NavigationRailDestination(
+                        icon: Badge(
+                            isLabelVisible: unreadCount > 0,
+                            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                            child: const Icon(Icons.notifications_none_rounded)),
+                        selectedIcon: Badge(
+                            isLabelVisible: unreadCount > 0,
+                            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                            child: const Icon(Icons.notifications_rounded)),
+                        label: Text(t('Notifications'))),
+                    NavigationRailDestination(
+                        icon: Badge(
+                            isLabelVisible: _currentAccount != null,
+                            smallSize: 7,
+                            backgroundColor: _green,
+                            child: const Icon(Icons.person_outline_rounded)),
+                        selectedIcon: Badge(
+                            isLabelVisible: _currentAccount != null,
+                            smallSize: 7,
+                            backgroundColor: _green,
+                            child: const Icon(Icons.person_rounded)),
+                        label: Text(youLabel)),
+                  ],
                 ),
               ),
-            ]),
-          ),
-        ]),
-      ),
-      bottomNavigationBar: wide
-          ? null
-          : Container(
-              decoration: BoxDecoration(
-                color: chromeColor,
-                border: Border(top: BorderSide(color: borderColor)),
-              ),
-              child: NavigationBar(
-                height: 66,
-                backgroundColor: Colors.transparent,
-                indicatorColor: theme.colorScheme.primaryContainer,
-                selectedIndex: _page,
-                onDestinationSelected: selectTab,
-                destinations: [
-                  NavigationDestination(
-                      icon: const Icon(Icons.home_outlined),
-                      selectedIcon: const Icon(Icons.home_rounded),
-                      label: t('Home')),
-                  NavigationDestination(
-                      icon: const Icon(Icons.forum_outlined),
-                      selectedIcon: const Icon(Icons.forum_rounded),
-                      label: t('Tweets')),
-                  NavigationDestination(
-                      icon: const Icon(Icons.explore_outlined),
-                      selectedIcon: const Icon(Icons.explore_rounded),
-                      label: t('Explore')),
-                  NavigationDestination(
-                      icon: const Icon(Icons.notifications_none_rounded),
-                      selectedIcon: const Icon(Icons.notifications_rounded),
-                      label: t('Notifications')),
-                  NavigationDestination(
-                      icon: const Icon(Icons.person_outline_rounded),
-                      selectedIcon: const Icon(Icons.person_rounded),
-                      label: youLabel),
-                ],
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 780),
+                  child: pages[_page],
+                ),
               ),
             ),
+          ]),
+        ),
+        bottomNavigationBar: wide
+            ? null
+            : Container(
+                decoration: BoxDecoration(
+                  color: chromeColor,
+                  border: Border(top: BorderSide(color: borderColor)),
+                ),
+                child: NavigationBar(
+                  height: 66,
+                  backgroundColor: Colors.transparent,
+                  indicatorColor: theme.colorScheme.primaryContainer,
+                  selectedIndex: _page,
+                  onDestinationSelected: selectTab,
+                  destinations: [
+                    NavigationDestination(
+                        icon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.home_outlined)),
+                        selectedIcon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.home_rounded)),
+                        label: t('Home')),
+                    NavigationDestination(
+                        icon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.forum_outlined)),
+                        selectedIcon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.forum_rounded)),
+                        label: t('Tweets')),
+                    NavigationDestination(
+                        icon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.explore_outlined)),
+                        selectedIcon: const Badge(
+                            isLabelVisible: false,
+                            child: Icon(Icons.explore_rounded)),
+                        label: t('Explore')),
+                    NavigationDestination(
+                        icon: Badge(
+                            isLabelVisible: unreadCount > 0,
+                            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                            child: const Icon(Icons.notifications_none_rounded)),
+                        selectedIcon: Badge(
+                            isLabelVisible: unreadCount > 0,
+                            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                            child: const Icon(Icons.notifications_rounded)),
+                        label: t('Notifications')),
+                    NavigationDestination(
+                        icon: Badge(
+                            isLabelVisible: _currentAccount != null,
+                            smallSize: 7,
+                            backgroundColor: _green,
+                            child: const Icon(Icons.person_outline_rounded)),
+                        selectedIcon: Badge(
+                            isLabelVisible: _currentAccount != null,
+                            smallSize: 7,
+                            backgroundColor: _green,
+                            child: const Icon(Icons.person_rounded)),
+                        label: youLabel),
+                  ],
+                ),
+              ),
+      ),
     );
   }
 
@@ -426,6 +559,7 @@ class _RumpunShellState extends State<RumpunShell> {
                 onPosted: () async {
                   if (dialogContext.mounted) Navigator.pop(dialogContext);
                   setState(() => _page = 0);
+                  _message(t('Post published'));
                   await _homeKey.currentState?._refresh(silent: true);
                 },
               ),
@@ -442,6 +576,7 @@ class _RumpunShellState extends State<RumpunShell> {
         onPosted: () async {
           if (sheetContext.mounted) Navigator.pop(sheetContext);
           setState(() => _page = 0);
+          _message(t('Post published'));
           await _homeKey.currentState?._refresh(silent: true);
         },
       ),
@@ -554,6 +689,15 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late final _controller = TextEditingController(text: widget.instance);
   late String _language = _languageTag(_appStore?.preferredLanguage ?? 'system');
+  late String _themeMode = _appStore?.setting('theme_mode', 'system') ?? 'system';
+  late String _defaultVisibility =
+      _appStore?.setting('default_visibility', 'public') ?? 'public';
+  late bool _pushEnabled =
+      _appStore?.boolSetting('push_enabled', fallback: true) ?? true;
+  late String _pushEndpoint = _appStore?.setting('push_endpoint', '') ?? '';
+  late bool _alwaysShowSensitive =
+      _appStore?.boolSetting('always_show_sensitive') ?? false;
+  late bool _compactCards = _appStore?.boolSetting('compact_cards') ?? false;
 
   /// Older builds stored the bare `en` / `id`; the dropdown only lists the
   /// regional tags, and an initialValue outside its items asserts.
@@ -581,7 +725,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await CachedNetworkImage.wipe();
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
-    if (mounted) setState(() => _clearing = false);
+    if (mounted) {
+      setState(() => _clearing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('Cache cleared'))),
+      );
+    }
+  }
+
+  Future<void> _configurePushEndpoint() async {
+    final endpointCtrl = TextEditingController(text: _pushEndpoint);
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(t('FCM / UnifiedPush endpoint')),
+        content: TextField(
+          controller: endpointCtrl,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            hintText: 'https://fcm.googleapis.com/fcm/send/...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(t('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, endpointCtrl.text.trim()),
+            child: Text(t('Save')),
+          ),
+        ],
+      ),
+    );
+    endpointCtrl.dispose();
+    if (saved == null) return;
+    setState(() => _pushEndpoint = saved);
+    _appStore?.setSetting('push_endpoint', saved);
+    if (saved.isNotEmpty && _currentAccount != null) {
+      try {
+        await _activeApi?.registerPushSubscription(endpoint: saved);
+      } catch (_) {}
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('Push subscription updated'))),
+      );
+    }
   }
 
   @override
@@ -623,6 +814,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
               loadL10n(value);
             },
           ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _defaultVisibility,
+            decoration: InputDecoration(
+                labelText: t('Default visibility'),
+                border: const OutlineInputBorder()),
+            items: [
+              DropdownMenuItem(value: 'public', child: Text(t('Public'))),
+              DropdownMenuItem(value: 'unlisted', child: Text(t('Quiet public'))),
+              DropdownMenuItem(value: 'private', child: Text(t('Followers only'))),
+              DropdownMenuItem(value: 'direct', child: Text(t('Mentioned only'))),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _defaultVisibility = value);
+              _appStore?.setSetting('default_visibility', value);
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _themeMode,
+            decoration: InputDecoration(
+                labelText: t('Theme'),
+                border: const OutlineInputBorder()),
+            items: [
+              DropdownMenuItem(value: 'system', child: Text(t('System default'))),
+              DropdownMenuItem(value: 'light', child: Text(t('Light'))),
+              DropdownMenuItem(value: 'dark', child: Text(t('Dark'))),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _themeMode = value);
+              _appStore?.setSetting('theme_mode', value);
+              _appConfigVersion.value++;
+            },
+          ),
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,
@@ -631,7 +858,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Text(t('Save')),
             ),
           ),
-          const Divider(height: 40),
+          const Divider(height: 32),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.notifications_active_outlined),
+            title: Text(t('Push notifications (FCM)')),
+            subtitle: Text(t('Receive background alerts for mentions, likes, and reposts')),
+            value: _pushEnabled,
+            onChanged: (value) {
+              setState(() => _pushEnabled = value);
+              _appStore?.setBoolSetting('push_enabled', value);
+              if (!value && _currentAccount != null) {
+                _activeApi?.deletePushSubscription().ignore();
+              }
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.cloud_sync_outlined),
+            title: Text(t('FCM / UnifiedPush endpoint')),
+            subtitle: Text(
+              _pushEndpoint.isEmpty ? t('System default') : _pushEndpoint,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _configurePushEndpoint,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.visibility_outlined),
+            title: Text(t('Always show sensitive media')),
+            value: _alwaysShowSensitive,
+            onChanged: (value) {
+              setState(() => _alwaysShowSensitive = value);
+              _appStore?.setBoolSetting('always_show_sensitive', value);
+              _appConfigVersion.value++;
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.view_compact_outlined),
+            title: Text(t('Compact timeline cards')),
+            value: _compactCards,
+            onChanged: (value) {
+              setState(() => _compactCards = value);
+              _appStore?.setBoolSetting('compact_cards', value);
+              _appConfigVersion.value++;
+            },
+          ),
+          const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.cleaning_services_outlined),
@@ -658,77 +934,114 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
 }
 
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.onAccount,
-      required this.onSettings, this.action});
+class _TopBar extends StatelessWidget implements PreferredSizeWidget {
+  const _TopBar({
+    required this.title,
+    required this.onAccount,
+    required this.onSettings,
+    this.onBookmarks,
+    this.onRefresh,
+    this.action,
+  });
   final String title;
   final VoidCallback onAccount;
   final VoidCallback onSettings;
+  final VoidCallback? onBookmarks;
+  final VoidCallback? onRefresh;
   final Widget? action;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(52);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    return Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: (isDark ? const Color(0xFF202422) : Colors.white).withValues(alpha: 0.96),
-          border: Border(
-            bottom: BorderSide(
-              color: theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.12 : 0.10),
-              width: 1,
-            ),
+    return AppBar(
+      toolbarHeight: 52,
+      scrolledUnderElevation: 0,
+      backgroundColor:
+          (isDark ? const Color(0xFF202422) : Colors.white).withValues(alpha: 0.96),
+      shape: Border(
+        bottom: BorderSide(
+          color: theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.12 : 0.10),
+          width: 1,
+        ),
+      ),
+      leadingWidth: 44,
+      leading: const Icon(Icons.public, size: 20),
+      titleSpacing: 0,
+      title: Row(children: [
+        Text(title,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(width: 8),
+        Container(
+          width: 7,
+          height: 7,
+          decoration: const BoxDecoration(
+            color: Color(0xFF38A979),
+            shape: BoxShape.circle,
           ),
         ),
-        child: Row(children: [
-          const Icon(Icons.public, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Row(children: [
-              Text(title,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF38A979),
-                  shape: BoxShape.circle,
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(_displayHost(_activeApi?.instance.host ?? _instance),
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: isDark ? const Color(0xFF9AA4A0) : const Color(0xFF6B7470),
+              )),
+        ),
+      ]),
+      actions: [
+        if (action != null) action!,
+        IconButton(
+          tooltip: _currentAccount == null ? t('Log in') : t('My account'),
+          onPressed: onAccount,
+          icon: _currentAccount == null
+              ? const Icon(Icons.account_circle_outlined)
+              : CircleAvatar(
+                  radius: 14,
+                  backgroundImage: CachedNetworkImage(
+                      _currentAccount!['avatar'] as String? ?? '',
+                      maxWidthPx: 56, maxHeightPx: 56),
+                  onBackgroundImageError: (_, __) {},
                 ),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(_displayHost(_activeApi?.instance.host ?? _instance),
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: isDark ? const Color(0xFF9AA4A0) : const Color(0xFF6B7470),
-                    )),
-              ),
-            ]),
+        ),
+        IconButton(
+            tooltip: t('Settings'),
+            onPressed: onSettings,
+            icon: const Icon(Icons.settings_outlined)),
+        MenuAnchor(
+          builder: (context, controller, _) => IconButton(
+            tooltip: t('More'),
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+            icon: const Icon(Icons.more_vert),
           ),
-          if (action != null) action!,
-          IconButton(
-              tooltip: _currentAccount == null ? t('Log in') : t('My account'),
-              onPressed: onAccount,
-              icon: _currentAccount == null
-                  ? const Icon(Icons.account_circle_outlined)
-                  : CircleAvatar(
-                      radius: 14,
-                      backgroundImage: CachedNetworkImage(
-                          _currentAccount!['avatar'] as String? ?? '',
-                          maxWidthPx: 56, maxHeightPx: 56),
-                      onBackgroundImageError: (_, __) {},
-                    ),
-          ),
-          IconButton(
-              tooltip: t('Settings'),
+          menuChildren: [
+            if (onRefresh != null)
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.refresh, size: 18),
+                onPressed: onRefresh,
+                child: Text(t('Refresh')),
+              ),
+            if (onBookmarks != null)
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.bookmark_border, size: 18),
+                onPressed: onBookmarks,
+                child: Text(t('Bookmarks')),
+              ),
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.tune, size: 18),
               onPressed: onSettings,
-              icon: const Icon(Icons.settings_outlined)),
-        ]),
-      );
+              child: Text(t('Settings')),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 
@@ -777,6 +1090,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   @override
   void initState() {
     super.initState();
+    _visibility = _appStore?.setting('default_visibility', 'public') ?? 'public';
     // Restore the draft for this slot (a half-written reply survives a tab
     // switch), then keep it saved as the user types.
     final draft = _appStore?.draft(_draftKey);
@@ -3023,6 +3337,9 @@ class _PostTileState extends State<_PostTile> {
     final emojis = (post.data['emojis'] as List<dynamic>?) ?? const [];
     final theme = Theme.of(context);
     final signedIn = _currentAccount != null;
+    final compact = _appStore?.boolSetting('compact_cards') ?? false;
+    final alwaysShowSensitive =
+        _appStore?.boolSetting('always_show_sensitive') ?? false;
     return Card(
       color: theme.colorScheme.surfaceContainerLow,
       margin: EdgeInsets.zero,
@@ -3036,7 +3353,7 @@ class _PostTileState extends State<_PostTile> {
         borderRadius: BorderRadius.circular(16),
         onTap: widget.onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: EdgeInsets.all(compact ? 10 : 14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (repostedBy != null)
             Padding(
@@ -3097,7 +3414,7 @@ class _PostTileState extends State<_PostTile> {
               for (final attachment in attachments)
                 if (attachment is Map<String, dynamic> && attachment['url'] != null)
                   attachment,
-            ], sensitive: sensitive && spoiler.isEmpty),
+            ], sensitive: sensitive && spoiler.isEmpty && !alwaysShowSensitive),
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Row(children: [
@@ -3326,7 +3643,7 @@ class _Spoiler extends StatefulWidget {
 }
 
 class _SpoilerState extends State<_Spoiler> {
-  bool _show = false;
+  late bool _show = _appStore?.boolSetting('always_show_sensitive') ?? false;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -3478,79 +3795,90 @@ String _relativeTime(String? value) {
   return 'now';
 }
 
-/// Inline gallery for a post's media. Tapping a tile opens the fullscreen
-/// preview; the play affordance lives there, not inline.
+/// Inline gallery for a post's media. Single attachments render full-width;
+/// multiple attachments use Material 3 [CarouselView].
 class _MediaGallery extends StatelessWidget {
   const _MediaGallery({required this.attachments, this.sensitive = false});
   final List<Map<String, dynamic>> attachments;
   /// Server-flagged sensitive media with no CW text: blurred until tapped,
   /// unlike a CW which hides the whole post behind [_Spoiler].
   final bool sensitive;
+
+  Widget _buildTile(BuildContext context, Map<String, dynamic> attachment,
+      {required bool single}) =>
+      Container(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Stack(fit: StackFit.expand, children: [
+          if (_thumbnailUrl(attachment) case final thumb?)
+            Image(
+                image: CachedNetworkImage(thumb, maxWidthPx: 900),
+                fit: single ? BoxFit.contain : BoxFit.cover,
+                errorBuilder: (_, __, ___) => _mediaFallbackIcon(attachment))
+          else
+            Center(child: _mediaFallbackIcon(attachment)),
+          if (attachment['type'] == 'video' || attachment['type'] == 'gifv')
+            const Center(
+              child: Icon(Icons.play_circle_fill,
+                  color: Colors.white,
+                  size: 44,
+                  shadows: [Shadow(blurRadius: 8, color: Colors.black54)]),
+            ),
+          if (attachment['type'] == 'gifv')
+            Positioned(
+              left: 8,
+              bottom: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text('GIF',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+          if (sensitive) const _SensitiveScrim(),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (attachments.isEmpty) return const SizedBox.shrink();
-    final single = attachments.length == 1;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: LayoutBuilder(builder: (context, box) => Wrap(spacing: 8, runSpacing: 8, children: [
-        for (final (index, attachment) in attachments.indexed)
-          GestureDetector(
-            onTap: () => _showPreview(context, attachments, index),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                width: single
-                    ? box.maxWidth
-                    : (box.maxWidth - (attachments.length - 1) * 8) / attachments.length.clamp(2, 3),
-                height: single ? null : 110,
-                child: AspectRatio(
-                  aspectRatio: single ? _attachmentAspect(attachment) : 1,
-                  // contain on a muted ground: never stretched, never cropped,
-                  // the clamped aspect keeps very tall/wide media bounded.
-                  child: Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    child: Stack(fit: StackFit.expand, children: [
-                      if (_thumbnailUrl(attachment) case final thumb?)
-                        Image(
-                            image: CachedNetworkImage(thumb, maxWidthPx: 900),
-                            fit: single ? BoxFit.contain : BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _mediaFallbackIcon(attachment))
-                      else
-                        Center(child: _mediaFallbackIcon(attachment)),
-                      if (attachment['type'] == 'video' || attachment['type'] == 'gifv')
-                        const Center(
-                          child: Icon(Icons.play_circle_fill,
-                              color: Colors.white,
-                              size: 44,
-                              shadows: [
-                                Shadow(blurRadius: 8, color: Colors.black54)
-                              ]),
-                        ),
-                      if (attachment['type'] == 'gifv')
-                        Positioned(
-                          left: 8,
-                          bottom: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.black87,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text('GIF',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700)),
-                          ),
-                        ),
-                      if (sensitive) const _SensitiveScrim(),
-                    ]),
-                  ),
-                ),
-              ),
+    if (attachments.length == 1) {
+      final attachment = attachments.first;
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: GestureDetector(
+          onTap: () => _showPreview(context, attachments, 0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: AspectRatio(
+              aspectRatio: _attachmentAspect(attachment),
+              child: _buildTile(context, attachment, single: true),
             ),
           ),
-      ])),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: SizedBox(
+        height: 190,
+        child: CarouselView(
+          itemExtent: 230,
+          shrinkExtent: 150,
+          padding: const EdgeInsets.only(right: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onTap: (index) => _showPreview(context, attachments, index),
+          children: [
+            for (final attachment in attachments)
+              _buildTile(context, attachment, single: false),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3621,6 +3949,7 @@ class _MediaPreview extends StatefulWidget {
 class _MediaPreviewState extends State<_MediaPreview> {
   late int _index = widget.initialIndex;
   late final _pageController = PageController(initialPage: widget.initialIndex);
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -3635,6 +3964,43 @@ class _MediaPreviewState extends State<_MediaPreview> {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  Future<void> _saveCurrentMedia() async {
+    final url = (_current['url'] ?? _current['preview_url']) as String? ?? '';
+    if (url.isEmpty || _saving) return;
+    setState(() => _saving = true);
+    try {
+      Directory? dir;
+      try {
+        dir = await getDownloadsDirectory();
+      } catch (_) {}
+      if (dir == null) {
+        try {
+          dir = await getApplicationDocumentsDirectory();
+        } catch (_) {
+          dir = Directory.systemTemp;
+        }
+      }
+      final uri = Uri.parse(url);
+      final rawName = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'media.jpg';
+      final safeName = rawName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final dest = File('${dir.path}/rumpun_$safeName');
+      final saved = await CachedNetworkImage.saveTo(url, dest);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('Saved to')} ${saved.path}')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('Something went wrong')}: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -3659,6 +4025,10 @@ class _MediaPreviewState extends State<_MediaPreview> {
                         actions: [TextButton(
                             onPressed: () => Navigator.pop(context),
                             child: Text(t('Close')))]))),
+          IconButton(
+              tooltip: t('Save image'),
+              onPressed: _saving ? null : _saveCurrentMedia,
+              icon: const Icon(Icons.download_outlined)),
           IconButton(
               tooltip: t('Open in browser'),
               onPressed: () => launchUrl(

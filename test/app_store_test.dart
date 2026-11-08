@@ -65,5 +65,11 @@ void main() {
     store.cacheStatuses('feed-1', [{'id': 'shared', 'content': 'a'}]);
     expect(store.cachedStatuses('feed-0').single['id'], 'shared');
     expect(store.cachedStatuses('feed-1').single['id'], 'shared');
+
+    expect(store.boolSetting('push_enabled', fallback: true), isTrue);
+    store.setBoolSetting('push_enabled', false);
+    expect(store.boolSetting('push_enabled', fallback: true), isFalse);
+    store.setSetting('theme_mode', 'dark');
+    expect(store.setting('theme_mode', 'system'), 'dark');
   });
 }

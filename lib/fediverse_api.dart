@@ -240,6 +240,38 @@ class FediverseApi {
   Future<void> dismissNotification(String notificationId) async =>
       _request('DELETE', '/api/v1/notifications/$notificationId');
 
+  /// Registers an FCM / UnifiedPush / WebPush subscription with the server.
+  Future<Map<String, dynamic>> registerPushSubscription({
+    required String endpoint,
+    String p256dh = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
+    String auth = 'UUQM042PCZrN2_2842b6vA',
+    Map<String, bool>? alerts,
+  }) async =>
+      (await _request('POST', '/api/v1/push/subscription', body: {
+        'subscription': {
+          'endpoint': endpoint,
+          'keys': {'p256dh': p256dh, 'auth': auth},
+        },
+        'data': {
+          'alerts': alerts ??
+              const {
+                'mention': true,
+                'status': true,
+                'reblog': true,
+                'follow': true,
+                'follow_request': true,
+                'favourite': true,
+                'poll': true,
+              },
+        },
+      })) as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> pushSubscription() async =>
+      (await _request('GET', '/api/v1/push/subscription')) as Map<String, dynamic>;
+
+  Future<void> deletePushSubscription() async =>
+      _request('DELETE', '/api/v1/push/subscription');
+
   Future<List<Map<String, dynamic>>> customEmojis() async =>
       ((await _request('GET', '/api/v1/custom_emojis')) as List)
           .cast<Map<String, dynamic>>();

@@ -197,4 +197,21 @@ void main() {
       'Fediverse API error (422): Validation failed',
     );
   });
+
+  test('registers and deletes FCM push subscription', () async {
+    final methods = <String>[];
+    final paths = <String>[];
+    final api = FediverseApi('social.example', client: MockClient((request) async {
+      methods.add(request.method);
+      paths.add(request.url.path);
+      return http.Response(jsonEncode({'id': 'push-1', 'endpoint': 'https://fcm.example/1'}), 200);
+    }));
+    addTearDown(api.close);
+
+    final sub = await api.registerPushSubscription(endpoint: 'https://fcm.example/1');
+    expect(sub['id'], 'push-1');
+    await api.deletePushSubscription();
+    expect(methods, ['POST', 'DELETE']);
+    expect(paths, ['/api/v1/push/subscription', '/api/v1/push/subscription']);
+  });
 }

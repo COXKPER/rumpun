@@ -90,6 +90,26 @@ class CachedNetworkImage extends ImageProvider<CachedNetworkImage> {
     }
   }
 
+  /// Saves [url] to [destination] (reusing the media cache when possible).
+  static Future<File> saveTo(String url, File destination) async {
+    final cached = await cachedFile(url, maxBytes: 100 << 20);
+    if (cached != null && cached.existsSync()) {
+      return cached.copy(destination.path);
+    }
+    final request = await _client.getUrl(Uri.parse(url));
+    final response = await request.close();
+    if (response.statusCode != 200) {
+      await response.drain<void>();
+      throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+    }
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in response) {
+      builder.add(chunk);
+    }
+    await destination.writeAsBytes(builder.takeBytes(), flush: true);
+    return destination;
+  }
+
   @override
   Future<CachedNetworkImage> obtainKey(ImageConfiguration configuration) =>
       SynchronousFuture<CachedNetworkImage>(this);

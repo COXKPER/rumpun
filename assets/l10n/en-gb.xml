@@ -108,4 +108,19 @@
   <string name="Public timeline · Sign in to follow accounts and post">Public timeline · Sign in to follow accounts and post</string>
   <string name="You">You</string>
   <string name="Trending">Trending</string>
+  <string name="More">More</string>
+  <string name="Save image">Save image</string>
+  <string name="Saved to">Saved to</string>
+  <string name="Theme">Theme</string>
+  <string name="Light">Light</string>
+  <string name="Dark">Dark</string>
+  <string name="Default visibility">Default visibility</string>
+  <string name="Push notifications (FCM)">Push notifications (FCM)</string>
+  <string name="Receive background alerts for mentions, likes, and reposts">Receive background alerts for mentions, likes, and reposts</string>
+  <string name="FCM / UnifiedPush endpoint">FCM / UnifiedPush endpoint</string>
+  <string name="Always show sensitive media">Always show sensitive media</string>
+  <string name="Compact timeline cards">Compact timeline cards</string>
+  <string name="Cache cleared">Cache cleared</string>
+  <string name="Post published">Post published</string>
+  <string name="Push subscription updated">Push subscription updated</string>
 </strings>

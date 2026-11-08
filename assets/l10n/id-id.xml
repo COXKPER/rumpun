@@ -108,4 +108,19 @@
   <string name="Public timeline · Sign in to follow accounts and post">Linimasa publik · Masuk untuk mengikuti akun dan memposting</string>
   <string name="You">Kamu</string>
   <string name="Trending">Tren</string>
+  <string name="More">Lainnya</string>
+  <string name="Save image">Simpan gambar</string>
+  <string name="Saved to">Disimpan ke</string>
+  <string name="Theme">Tema</string>
+  <string name="Light">Terang</string>
+  <string name="Dark">Gelap</string>
+  <string name="Default visibility">Visibilitas bawaan</string>
+  <string name="Push notifications (FCM)">Notifikasi push (FCM)</string>
+  <string name="Receive background alerts for mentions, likes, and reposts">Terima pemberitahuan latar belakang untuk sebutan, suka, dan repost</string>
+  <string name="FCM / UnifiedPush endpoint">Endpoint FCM / UnifiedPush</string>
+  <string name="Always show sensitive media">Selalu tampilkan media sensitif</string>
+  <string name="Compact timeline cards">Kartu linimasa ringkas</string>
+  <string name="Cache cleared">Cache dibersihkan</string>
+  <string name="Post published">Postingan diterbitkan</string>
+  <string name="Push subscription updated">Langganan push diperbarui</string>
 </strings>

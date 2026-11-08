@@ -47,6 +47,8 @@ void main() {
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
     expect(find.text('Default instance'), findsOneWidget);
+    expect(find.text('Push notifications (FCM)'), findsOneWidget);
+    expect(find.text('Compact timeline cards'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, 'social.example');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
