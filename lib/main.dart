@@ -247,20 +247,30 @@ class RumpunShell extends StatefulWidget {
 
 class _RumpunShellState extends State<RumpunShell> {
   final _homeKey = GlobalKey<_HomeScreenState>();
+  final _tweetsKey = GlobalKey<_TweetsScreenState>();
   final _activityKey = GlobalKey<_ActivityScreenState>();
   int _page = 0;
   List<String> get _titles => [
-        t('Home'), t('Explore'), t('Notifications'),
-        // The last tab is your tweets; it only becomes "Profile" when you
-        // open someone else from a post.
-        _profileAccount == null ? t('Tweets') : t('Profile'),
+        t('Home'),
+        t('Tweets'),
+        t('Explore'),
+        t('Notifications'),
+        _profileAccount == null ? t('You') : t('Profile'),
       ];
   Map<String, dynamic>? _profileAccount;
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final chromeColor =
+        (isDark ? const Color(0xFF202422) : Colors.white).withValues(alpha: 0.96);
+    final borderColor =
+        theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.12 : 0.10);
     final wide = MediaQuery.sizeOf(context).width >= 760;
+    final youLabel = _profileAccount == null ? t('You') : t('Profile');
     final pages = [
       HomeScreen(key: _homeKey, onOpenProfile: _openProfile, onCompose: _compose),
+      TweetsScreen(key: _tweetsKey, onOpenProfile: _openProfile),
       ExploreScreen(onOpenProfile: _openProfile),
       ActivityScreen(key: _activityKey),
       _profileAccount == null
@@ -269,6 +279,15 @@ class _RumpunShellState extends State<RumpunShell> {
           : ProfileScreen(account: _profileAccount,
               onOpenProfile: _openProfile),
     ];
+    void selectTab(int i) {
+      if (i == 0 && _page == 0) _homeKey.currentState?._scrollToTop();
+      if (i == 1 && _page == 1) _tweetsKey.currentState?._scrollToTop();
+      setState(() {
+        _page = i;
+        _profileAccount = null;
+      });
+    }
+
     return Scaffold(
       floatingActionButton: _currentAccount == null
           ? null
@@ -289,7 +308,11 @@ class _RumpunShellState extends State<RumpunShell> {
                       ? null
                       : () => _homeKey.currentState?._openBookmarks(),
                   icon: const Icon(Icons.bookmark_border)),
-              2 => IconButton(
+              1 => IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: () => _tweetsKey.currentState?.refresh(),
+                  icon: const Icon(Icons.refresh)),
+              3 => IconButton(
                   tooltip: 'Refresh',
                   onPressed: () => _activityKey.currentState?.refresh(),
                   icon: const Icon(Icons.refresh)),
@@ -299,33 +322,42 @@ class _RumpunShellState extends State<RumpunShell> {
           Expanded(
             child: Row(children: [
               if (wide)
-                NavigationRail(
-                  selectedIndex: _page,
-                  onDestinationSelected: (i) {
-                    if (i == 0 && _page == 0) {
-                      _homeKey.currentState?._scrollToTop();
-                    }
-                    setState(() {
-                      _page = i;
-                      _profileAccount = null;
-                    });
-                  },
-                  destinations: [
-                    NavigationRailDestination(
-                        icon: const Icon(Icons.home_outlined),
-                        label: Text(t('Home'))),
-                    NavigationRailDestination(
-                        icon: const Icon(Icons.search),
-                        label: Text(t('Explore'))),
-                    NavigationRailDestination(
-                        icon: const Icon(Icons.notifications_none),
-                        label: Text(t('Notifications'))),
-                    NavigationRailDestination(
-                        icon: const Icon(Icons.person_outline),
-                        label: Text(_profileAccount == null
-                            ? t('Tweets')
-                            : t('Profile'))),
-                  ],
+                Container(
+                  decoration: BoxDecoration(
+                    color: chromeColor,
+                    border: Border(right: BorderSide(color: borderColor)),
+                  ),
+                  child: NavigationRail(
+                    backgroundColor: Colors.transparent,
+                    minWidth: 84,
+                    labelType: NavigationRailLabelType.all,
+                    indicatorColor: theme.colorScheme.primaryContainer,
+                    indicatorShape: const StadiumBorder(),
+                    selectedIndex: _page,
+                    onDestinationSelected: selectTab,
+                    destinations: [
+                      NavigationRailDestination(
+                          icon: const Icon(Icons.home_outlined),
+                          selectedIcon: const Icon(Icons.home_rounded),
+                          label: Text(t('Home'))),
+                      NavigationRailDestination(
+                          icon: const Icon(Icons.forum_outlined),
+                          selectedIcon: const Icon(Icons.forum_rounded),
+                          label: Text(t('Tweets'))),
+                      NavigationRailDestination(
+                          icon: const Icon(Icons.explore_outlined),
+                          selectedIcon: const Icon(Icons.explore_rounded),
+                          label: Text(t('Explore'))),
+                      NavigationRailDestination(
+                          icon: const Icon(Icons.notifications_none_rounded),
+                          selectedIcon: const Icon(Icons.notifications_rounded),
+                          label: Text(t('Notifications'))),
+                      NavigationRailDestination(
+                          icon: const Icon(Icons.person_outline_rounded),
+                          selectedIcon: const Icon(Icons.person_rounded),
+                          label: Text(youLabel)),
+                    ],
+                  ),
                 ),
               Expanded(
                 child: Center(
@@ -341,29 +373,40 @@ class _RumpunShellState extends State<RumpunShell> {
       ),
       bottomNavigationBar: wide
           ? null
-          : NavigationBar(
-              selectedIndex: _page,
-              onDestinationSelected: (i) {
-                if (i == 0 && _page == 0) {
-                  _homeKey.currentState?._scrollToTop();
-                }
-                setState(() {
-                  _page = i;
-                  _profileAccount = null;
-                });
-              },
-              destinations: [
-                NavigationDestination(
-                    icon: const Icon(Icons.home_outlined), label: t('Home')),
-                NavigationDestination(
-                    icon: const Icon(Icons.search), label: t('Explore')),
-                NavigationDestination(
-                    icon: const Icon(Icons.notifications_none),
-                    label: t('Notifications')),
-                NavigationDestination(
-                    icon: const Icon(Icons.person_outline),
-                    label: _profileAccount == null ? t('Tweets') : t('Profile')),
-              ],
+          : Container(
+              decoration: BoxDecoration(
+                color: chromeColor,
+                border: Border(top: BorderSide(color: borderColor)),
+              ),
+              child: NavigationBar(
+                height: 66,
+                backgroundColor: Colors.transparent,
+                indicatorColor: theme.colorScheme.primaryContainer,
+                selectedIndex: _page,
+                onDestinationSelected: selectTab,
+                destinations: [
+                  NavigationDestination(
+                      icon: const Icon(Icons.home_outlined),
+                      selectedIcon: const Icon(Icons.home_rounded),
+                      label: t('Home')),
+                  NavigationDestination(
+                      icon: const Icon(Icons.forum_outlined),
+                      selectedIcon: const Icon(Icons.forum_rounded),
+                      label: t('Tweets')),
+                  NavigationDestination(
+                      icon: const Icon(Icons.explore_outlined),
+                      selectedIcon: const Icon(Icons.explore_rounded),
+                      label: t('Explore')),
+                  NavigationDestination(
+                      icon: const Icon(Icons.notifications_none_rounded),
+                      selectedIcon: const Icon(Icons.notifications_rounded),
+                      label: t('Notifications')),
+                  NavigationDestination(
+                      icon: const Icon(Icons.person_outline_rounded),
+                      selectedIcon: const Icon(Icons.person_rounded),
+                      label: youLabel),
+                ],
+              ),
             ),
     );
   }
@@ -413,7 +456,7 @@ class _RumpunShellState extends State<RumpunShell> {
       if (!mounted) return;
       setState(() {
         _profileAccount = result;
-        _page = 3;
+        _page = 4;
       });
     } catch (error) {
       if (mounted) _message('Could not load profile: $error');
@@ -424,7 +467,7 @@ class _RumpunShellState extends State<RumpunShell> {
     if (_currentAccount != null) {
       setState(() {
         _profileAccount = null;
-        _page = 3;
+        _page = 4;
       });
     } else {
       _login();
@@ -1905,6 +1948,202 @@ class _BookmarksSheetState extends State<_BookmarksSheet> {
           ),
         ]),
       );
+}
+
+/// Dedicated Fediverse posts stream (Federated, Local, Trending).
+class TweetsScreen extends StatefulWidget {
+  const TweetsScreen({super.key, required this.onOpenProfile});
+  final ValueChanged<String> onOpenProfile;
+  @override
+  State<TweetsScreen> createState() => _TweetsScreenState();
+}
+
+class _TweetsScreenState extends State<TweetsScreen> {
+  int _feed = 0;
+  int _reqId = 0;
+  List<Map<String, dynamic>> _statuses = [];
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  String? _error;
+  final _scroll = ScrollController();
+
+  String get _cacheKey => 'tweets-fediverse-$_feed';
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+    final cached = _appStore?.cachedStatuses(_cacheKey);
+    if (cached != null && cached.isNotEmpty) {
+      _statuses = cached;
+      _loading = false;
+    }
+    refresh(silent: _statuses.isNotEmpty);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _scrollToTop() {
+    if (_scroll.hasClients) {
+      _scroll.animateTo(0,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic);
+    }
+  }
+
+  void _onScroll() {
+    if (_feed < 2 && _scroll.position.extentAfter < 600) _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    final api = _activeApi;
+    if (api == null || _feed == 2 || _loading || _loadingMore || !_hasMore || _statuses.isEmpty) {
+      return;
+    }
+    final lastId = _statuses.last['id'] as String?;
+    if (lastId == null || lastId.isEmpty) return;
+    final reqId = _reqId;
+    final feed = _feed;
+    setState(() => _loadingMore = true);
+    try {
+      final data = await api.timeline(
+          type: 'public', local: feed == 1, maxId: lastId);
+      if (!mounted || reqId != _reqId) return;
+      final seen = {for (final status in _statuses) status['id']};
+      final fresh = data.where((s) => !seen.contains(s['id'])).toList();
+      setState(() {
+        _statuses = [..._statuses, ...fresh];
+        _hasMore = fresh.isNotEmpty;
+      });
+      if (fresh.isNotEmpty) _appStore?.cacheStatuses('tweets-fediverse-$feed', fresh);
+    } catch (_) {
+    } finally {
+      if (mounted && reqId == _reqId) setState(() => _loadingMore = false);
+    }
+  }
+
+  Future<void> refresh({bool silent = false}) async {
+    final api = _activeApi;
+    if (api == null) return;
+    final reqId = ++_reqId;
+    final feed = _feed;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = feed == 2
+          ? await api.trendingStatuses(limit: 20)
+          : await api.timeline(type: 'public', local: feed == 1);
+      if (!mounted || reqId != _reqId) return;
+      _appStore?.cacheStatuses('tweets-fediverse-$feed', data);
+      setState(() {
+        _statuses = data;
+        _hasMore = feed < 2 && data.isNotEmpty;
+      });
+    } catch (error) {
+      if (mounted && reqId == _reqId && !silent) setState(() => _error = '$error');
+    } finally {
+      if (mounted && reqId == _reqId) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openThread(BuildContext context, Map<String, dynamic> status,
+      {bool focusReply = false}) {
+    final target = status['reblog'] as Map<String, dynamic>? ?? status;
+    final focusId = target['id'] as String? ?? '';
+    return showDialog<void>(
+      context: context,
+      builder: (_) => _ThreadDialog(
+          status: target,
+          focusId: focusId,
+          openReply: focusReply,
+          onProfile: widget.onOpenProfile),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+        _TimelineFilter(
+          selected: _feed,
+          options: [t('Federated'), t('Local'), t('Trending')],
+          onSelect: (i) {
+            if (i == _feed) {
+              _scrollToTop();
+              refresh(silent: _statuses.isNotEmpty);
+              return;
+            }
+            final cached = _appStore?.cachedStatuses('tweets-fediverse-$i');
+            final hasCache = cached != null && cached.isNotEmpty;
+            setState(() {
+              _feed = i;
+              _hasMore = i < 2;
+              _loadingMore = false;
+              _error = null;
+              _statuses = hasCache ? cached : [];
+            });
+            if (_scroll.hasClients) _scroll.jumpTo(0);
+            refresh(silent: hasCache);
+          },
+        ),
+        SizedBox(
+          height: 2,
+          child: _loading ? const LinearProgressIndicator(minHeight: 2) : null,
+        ),
+        if (_error != null && _statuses.isEmpty)
+          Expanded(child: _StateMessage(message: _error!, action: refresh))
+        else if (_statuses.isEmpty && !_loading)
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(
+                    height: 220,
+                    child: Center(child: Text(t('No posts yet'))),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: refresh,
+              child: ListView.separated(
+                controller: _scroll,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                itemCount: _statuses.length + (_loadingMore ? 1 : 0),
+                addAutomaticKeepAlives: false,
+                addRepaintBoundaries: true,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, i) => i == _statuses.length
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                            child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2))))
+                    : _PostTile(
+                        key: ValueKey(_statuses[i]['id'] ?? i),
+                        post: Post(_statuses[i], _activeApi!.instance.host),
+                        onProfile: widget.onOpenProfile,
+                        onTap: () => _openThread(context, _statuses[i]),
+                        onReply: (status) =>
+                            _openThread(context, status, focusReply: true),
+                      ),
+              ),
+            ),
+          ),
+      ]);
 }
 
 class ExploreScreen extends StatefulWidget {

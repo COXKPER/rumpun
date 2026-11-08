@@ -26,6 +26,8 @@ void main() {
     expect(find.text('Following'), findsOneWidget);
     expect(find.text('Local'), findsOneWidget);
     expect(find.text('Federated'), findsOneWidget);
+    expect(find.text('Tweets'), findsOneWidget);
+    expect(find.text('You'), findsOneWidget);
     expect(find.text('Beautiful morning'), findsNothing);
     expect(find.text('Raka replied to your post'), findsNothing);
     expect(find.byTooltip('Log in'), findsOneWidget);
@@ -52,7 +54,7 @@ void main() {
     expect(find.text('social.example'), findsWidgets);
   });
 
-  testWidgets('opening a profile from a post switches to tab 3 without RangeError', (tester) async {
+  testWidgets('Tweets Fediverse tab and opening a profile work without RangeError', (tester) async {
     tester.view.physicalSize = const Size(500, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -70,7 +72,8 @@ void main() {
       if (request.url.path == '/api/v1/statuses/orig-1/context') {
         return http.Response(jsonEncode({'ancestors': [], 'descendants': []}), 200);
       }
-      if (request.url.path.startsWith('/api/v1/timelines/')) {
+      if (request.url.path.startsWith('/api/v1/timelines/') ||
+          request.url.path == '/api/v1/trends/statuses') {
         return http.Response(jsonEncode([
           {
             'id': 'reblog-99',
@@ -114,9 +117,22 @@ void main() {
     await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
 
+    // Switch to the Tweets (Fediverse posts) tab and verify its Trending pill.
+    await tester.tap(find.text('Tweets'));
+    await tester.pumpAndSettle();
+    expect(find.text('Trending'), findsOneWidget);
+    expect(find.text('Post body'), findsOneWidget);
+    await tester.tap(find.text('Trending'));
+    await tester.pumpAndSettle();
+    expect(find.text('Post body'), findsOneWidget);
+
     await tester.tap(find.text('Raka'));
     await tester.pumpAndSettle();
     expect(find.text('@raka'), findsWidgets);
+    expect(find.text('Profile'), findsWidgets);
+    await tester.tap(find.text('Profile').last);
+    await tester.pumpAndSettle();
+    expect(find.text('You'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 }
