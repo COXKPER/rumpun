@@ -49,6 +49,7 @@ void main() {
     expect(find.text('Default instance'), findsOneWidget);
     expect(find.text('Push notifications (FCM)'), findsOneWidget);
     expect(find.text('Compact timeline cards'), findsOneWidget);
+    expect(find.text('Support & feedback'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, 'social.example');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();

@@ -37,6 +37,7 @@ void main() {
 }
 
 const _green = Color(0xFF236B55);
+const _supportUrl = 'https://github.com/COXKPER/rumpun/issues';
 FediverseApi? _activeApi;
 AppStore? _appStore;
 Map<String, dynamic>? _currentAccount;
@@ -910,6 +911,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.help_outline),
+            title: Text(t('Support & feedback')),
+            subtitle: const Text('github.com/COXKPER/rumpun'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => launchUrl(Uri.parse(_supportUrl),
+                mode: LaunchMode.externalApplication),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.cleaning_services_outlined),
             title: Text(t('Clear cache')),
             subtitle: Text(t('Cache subtitle')),
@@ -1037,6 +1047,12 @@ class _TopBar extends StatelessWidget implements PreferredSizeWidget {
               leadingIcon: const Icon(Icons.tune, size: 18),
               onPressed: onSettings,
               child: Text(t('Settings')),
+            ),
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.help_outline, size: 18),
+              onPressed: () => launchUrl(Uri.parse(_supportUrl),
+                  mode: LaunchMode.externalApplication),
+              child: Text(t('Support & feedback')),
             ),
           ],
         ),
@@ -2014,7 +2030,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// Conversation view: ancestors above, the opened post highlighted, then
-/// descendants nested one indent per reply level, per DESAIN §2.6.
+/// descendants nested one indent per reply level.
 class _ThreadDialog extends StatefulWidget {
   const _ThreadDialog({required this.status, required this.focusId,
       this.openReply = false, required this.onProfile});
