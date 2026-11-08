@@ -37,13 +37,14 @@ class FediverseApi {
       {Map<String, String>? query, Object? body}) async {
     final uri = endpoint(path, query);
     final headers = {..._headers, if (body != null) 'Content-Type': 'application/json'};
-    final response = switch (method) {
-      'GET' => await _client.get(uri, headers: headers),
-      'POST' => await _client.post(uri, headers: headers, body: jsonEncode(body)),
-      'PATCH' => await _client.patch(uri, headers: headers, body: jsonEncode(body)),
-      'DELETE' => await _client.delete(uri, headers: headers),
+    final response = await (switch (method) {
+      'GET' => _client.get(uri, headers: headers),
+      'POST' => _client.post(uri, headers: headers, body: jsonEncode(body)),
+      'PUT' => _client.put(uri, headers: headers, body: jsonEncode(body)),
+      'PATCH' => _client.patch(uri, headers: headers, body: jsonEncode(body)),
+      'DELETE' => _client.delete(uri, headers: headers),
       _ => throw ArgumentError.value(method, 'method'),
-    };
+    }).timeout(const Duration(seconds: 20));
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw FediverseException(response.statusCode, response.body);
     }
@@ -269,7 +270,15 @@ class FediverseException implements Exception {
   final int statusCode;
   final String body;
   @override
-  String toString() => 'Fediverse API error ($statusCode): $body';
+  String toString() {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['error'] is String) {
+        return 'Fediverse API error ($statusCode): ${decoded['error']}';
+      }
+    } catch (_) {}
+    return 'Fediverse API error ($statusCode): $body';
+  }
 }
 
 // `Isolate.run` keeps large response parsing off the UI isolate without a dependency.

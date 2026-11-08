@@ -43,4 +43,27 @@ void main() {
     // Accounts/settings survive a cache wipe.
     expect(store.preferredInstance, 'mastodon.social');
   });
+
+  test('persists composer drafts and keeps shared statuses across timelines', () {
+    final store = AppStore.at((_) => ':memory:');
+    addTearDown(store.close);
+
+    expect(store.draft('compose'), isNull);
+    store.saveDraft('compose', text: 'halo dunia', spoiler: 'cw', visibility: 'unlisted');
+    expect(store.draft('compose'), {
+      'text': 'halo dunia',
+      'spoiler': 'cw',
+      'visibility': 'unlisted',
+      'in_reply_to_id': null,
+      'in_reply_to_acct': null,
+      'media_count': 0,
+    });
+    store.deleteDraft('compose');
+    expect(store.draft('compose'), isNull);
+
+    store.cacheStatuses('feed-0', [{'id': 'shared', 'content': 'a'}]);
+    store.cacheStatuses('feed-1', [{'id': 'shared', 'content': 'a'}]);
+    expect(store.cachedStatuses('feed-0').single['id'], 'shared');
+    expect(store.cachedStatuses('feed-1').single['id'], 'shared');
+  });
 }

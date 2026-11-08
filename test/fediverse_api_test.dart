@@ -178,4 +178,23 @@ void main() {
     expect(emojis.length, 1);
     expect(emojis.first['shortcode'], 'blobcat');
   });
+
+  test('updates media description via PUT and formats JSON error messages', () async {
+    late String method;
+    late Map<String, dynamic> body;
+    final api = FediverseApi('social.example', client: MockClient((request) async {
+      method = request.method;
+      body = jsonDecode(request.body) as Map<String, dynamic>;
+      return http.Response(jsonEncode({'id': 'm1'}), 200);
+    }));
+    addTearDown(api.close);
+
+    await api.updateMedia('m1', description: 'A cat');
+    expect(method, 'PUT');
+    expect(body, {'description': 'A cat'});
+    expect(
+      const FediverseException(422, '{"error":"Validation failed"}').toString(),
+      'Fediverse API error (422): Validation failed',
+    );
+  });
 }

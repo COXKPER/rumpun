@@ -26,12 +26,18 @@ class CachedNetworkImage extends ImageProvider<CachedNetworkImage> {
   /// and a new socket for every tile while scrolling.
   static final HttpClient _client = HttpClient()
     ..maxConnectionsPerHost = 6
+    ..connectionTimeout = const Duration(seconds: 15)
     ..idleTimeout = const Duration(seconds: 30);
 
   static Future<Directory> cacheDir() async {
     final existing = _cacheDir;
     if (existing != null) return existing;
-    final base = await getApplicationSupportDirectory();
+    Directory base;
+    try {
+      base = await getApplicationSupportDirectory();
+    } catch (_) {
+      base = Directory.systemTemp;
+    }
     final dir = Directory('${base.path}/media-cache');
     await dir.create(recursive: true);
     return _cacheDir = dir;
@@ -107,6 +113,7 @@ class CachedNetworkImage extends ImageProvider<CachedNetworkImage> {
       final response = await _client.getUrl(Uri.parse(key.url))
           .then((request) => request.close());
       if (response.statusCode != 200) {
+        await response.drain<void>();
         throw NetworkImageLoadException(
             statusCode: response.statusCode, uri: Uri.parse(key.url));
       }

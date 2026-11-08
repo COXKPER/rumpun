@@ -104,4 +104,6 @@
   <string name="Post">Post</string>
   <string name="Emoji">Emoji</string>
   <string name="Custom emojis">Custom emojis</string>
+  <string name="reposted">reposted</string>
+  <string name="Public timeline · Sign in to follow accounts and post">Public timeline · Sign in to follow accounts and post</string>
 </strings>

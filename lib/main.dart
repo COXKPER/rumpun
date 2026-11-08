@@ -139,6 +139,13 @@ class _RumpunAppState extends State<RumpunApp> {
             builder: (context, version, _) => MaterialApp(
               title: 'Fediverse',
               debugShowCheckedModeBanner: false,
+              scrollBehavior: const MaterialScrollBehavior().copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
               theme: ThemeData(
                 colorScheme: lightScheme,
                 useMaterial3: true,
@@ -223,6 +230,13 @@ class Post {
       ? account['display_name'] as String
       : account['username'] as String? ?? acct;
   String get content => data['content'] as String? ?? '';
+  String? get repostedBy {
+    final reblog = status['reblog'];
+    if (reblog is! Map<String, dynamic>) return null;
+    final by = status['account'] as Map<String, dynamic>? ?? {};
+    final display = by['display_name'] as String?;
+    return display?.isNotEmpty == true ? display : by['username'] as String?;
+  }
 }
 
 class RumpunShell extends StatefulWidget {
@@ -287,10 +301,15 @@ class _RumpunShellState extends State<RumpunShell> {
               if (wide)
                 NavigationRail(
                   selectedIndex: _page,
-                  onDestinationSelected: (i) => setState(() {
-                    _page = i;
-                    if (i != 3) _profileAccount = null;
-                  }),
+                  onDestinationSelected: (i) {
+                    if (i == 0 && _page == 0) {
+                      _homeKey.currentState?._scrollToTop();
+                    }
+                    setState(() {
+                      _page = i;
+                      _profileAccount = null;
+                    });
+                  },
                   destinations: [
                     NavigationRailDestination(
                         icon: const Icon(Icons.home_outlined),
@@ -324,10 +343,15 @@ class _RumpunShellState extends State<RumpunShell> {
           ? null
           : NavigationBar(
               selectedIndex: _page,
-              onDestinationSelected: (i) => setState(() {
-                _page = i;
-                if (i != 3) _profileAccount = null;
-              }),
+              onDestinationSelected: (i) {
+                if (i == 0 && _page == 0) {
+                  _homeKey.currentState?._scrollToTop();
+                }
+                setState(() {
+                  _page = i;
+                  _profileAccount = null;
+                });
+              },
               destinations: [
                 NavigationDestination(
                     icon: const Icon(Icons.home_outlined), label: t('Home')),
@@ -389,7 +413,7 @@ class _RumpunShellState extends State<RumpunShell> {
       if (!mounted) return;
       setState(() {
         _profileAccount = result;
-        _page = 4;
+        _page = 3;
       });
     } catch (error) {
       if (mounted) _message('Could not load profile: $error');
@@ -399,8 +423,8 @@ class _RumpunShellState extends State<RumpunShell> {
   void _openAccount() {
     if (_currentAccount != null) {
       setState(() {
-        _profileAccount = _currentAccount;
-        _page = 4;
+        _profileAccount = null;
+        _page = 3;
       });
     } else {
       _login();
@@ -1043,7 +1067,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                          _attachments.any((entry) => entry['status'] == 'done' && _alt.isEmpty)
+                          _attachments.indexed.any((item) =>
+                                  item.$2['status'] == 'done' &&
+                                  _alt[item.$1].text.trim().isEmpty)
                               ? t('Add a description to your images before posting. '
                                   'People using screen readers cannot see them.')
                               : t('This post mentions sensitive topics. '
@@ -1348,6 +1374,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _feed = 0;
+  int _reqId = 0;
   List<Map<String, dynamic>> _statuses = [];
   bool _loading = true;
   bool _loadingMore = false;
@@ -1364,13 +1391,21 @@ class _HomeScreenState extends State<HomeScreen> {
       _statuses = cached;
       _loading = false;
     }
-    _refresh();
+    _refresh(silent: _statuses.isNotEmpty);
   }
 
   @override
   void dispose() {
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _scrollToTop() {
+    if (_scroll.hasClients) {
+      _scroll.animateTo(0,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic);
+    }
   }
 
   void _onScroll() {
@@ -1385,79 +1420,95 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     final lastId = _statuses.last['id'] as String?;
     if (lastId == null || lastId.isEmpty) return;
+    final reqId = _reqId;
+    final feed = _feed;
     setState(() => _loadingMore = true);
     try {
       final data = await api.timeline(
-          type: _feed == 0 && _currentAccount != null ? 'home' : 'public',
-          local: _feed == 1,
+          type: feed == 0 && _currentAccount != null ? 'home' : 'public',
+          local: feed == 1,
           maxId: lastId);
+      if (!mounted || reqId != _reqId) return;
       final seen = {for (final status in _statuses) status['id']};
       final fresh = data.where((s) => !seen.contains(s['id'])).toList();
-      if (!mounted) return;
       setState(() {
         _statuses = [..._statuses, ...fresh];
         _hasMore = fresh.isNotEmpty;
       });
-      if (fresh.isNotEmpty) _appStore?.cacheStatuses('feed-$_feed', fresh);
+      if (fresh.isNotEmpty) _appStore?.cacheStatuses('feed-$feed', fresh);
     } catch (_) {
       // Keep the current page; the next scroll retries.
     } finally {
-      if (mounted) setState(() => _loadingMore = false);
+      if (mounted && reqId == _reqId) setState(() => _loadingMore = false);
     }
   }
 
   Future<void> _refresh({bool silent = false}) async {
     final api = _activeApi;
     if (api == null) return;
+    final reqId = ++_reqId;
+    final feed = _feed;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final data = await api.timeline(
-          type: _feed == 0 && _currentAccount != null ? 'home' : 'public',
-          local: _feed == 1);
-      _appStore?.cacheStatuses('feed-$_feed', data);
-      if (mounted) {
-        setState(() {
-          _statuses = data;
-          _hasMore = data.isNotEmpty;
-        });
-      }
+          type: feed == 0 && _currentAccount != null ? 'home' : 'public',
+          local: feed == 1);
+      if (!mounted || reqId != _reqId) return;
+      _appStore?.cacheStatuses('feed-$feed', data);
+      setState(() {
+        _statuses = data;
+        _hasMore = data.isNotEmpty;
+      });
     } catch (error) {
-      if (mounted && !silent) setState(() => _error = '$error');
+      if (mounted && reqId == _reqId && !silent) setState(() => _error = '$error');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && reqId == _reqId) setState(() => _loading = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) => Column(children: [
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(children: [
         _TimelineFilter(
           selected: _feed,
           options: [t('Following'), t('Local'), t('Federated')],
           onSelect: (i) {
+            if (i == _feed) {
+              _scrollToTop();
+              _refresh(silent: _statuses.isNotEmpty);
+              return;
+            }
+            // Cached feed renders instantly; refresh reconciles in the background.
+            final cached = _appStore?.cachedStatuses('feed-$i');
+            final hasCache = cached != null && cached.isNotEmpty;
             setState(() {
               _feed = i;
               _hasMore = true;
+              _loadingMore = false;
+              _error = null;
+              _statuses = hasCache ? cached : [];
             });
-            // Cached feed renders instantly; refresh reconciles in the background.
-            final cached = _appStore?.cachedStatuses('feed-$i');
-            if (cached != null && cached.isNotEmpty) {
-              setState(() => _statuses = cached);
-            } else {
-              setState(() => _statuses = []);
-            }
-            _refresh(silent: true);
+            if (_scroll.hasClients) _scroll.jumpTo(0);
+            _refresh(silent: hasCache);
           },
         ),
         if (_currentAccount != null && widget.onCompose != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Card(
-              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              color: theme.colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                ),
+              ),
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 onTap: widget.onCompose,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1467,54 +1518,104 @@ class _HomeScreenState extends State<HomeScreen> {
                     Expanded(
                       child: Text(
                         t('What do you want to share?'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ),
                     Icon(Icons.edit_outlined,
-                        size: 20, color: Theme.of(context).colorScheme.primary),
+                        size: 20, color: theme.colorScheme.primary),
                   ]),
                 ),
               ),
             ),
           ),
         if (_currentAccount == null)
-          const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4),
-              child: Text('Public timeline · Sign in to follow accounts and post')),
-        if (_loading) const LinearProgressIndicator(),
-        if (_error != null) _StateMessage(message: _error!, action: _refresh),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.separated(
-              controller: _scroll,
-              padding: const EdgeInsets.all(16),
-              itemCount: _statuses.length + (_loadingMore ? 1 : 0),
-              // Ghost feeds the blur-ahead area so scrolling never shows blanks.
-              addAutomaticKeepAlives: false,
-              addRepaintBoundaries: true,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, i) => i == _statuses.length
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Center(
-                          child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2))))
-                  : _PostTile(
-                      post: Post(_statuses[i], _activeApi!.instance.host),
-                      onProfile: widget.onOpenProfile,
-                      onTap: () => _openThread(context, _statuses[i]),
-                      onReply: (status) =>
-                          _openThread(context, status, focusReply: true),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Material(
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => context
+                    .findAncestorStateOfType<_RumpunShellState>()
+                    ?._openAccount(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Row(children: [
+                    Icon(Icons.public, size: 16, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        t('Public timeline · Sign in to follow accounts and post'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
+                    Icon(Icons.chevron_right,
+                        size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  ]),
+                ),
+              ),
             ),
           ),
+        SizedBox(
+          height: 2,
+          child: _loading ? const LinearProgressIndicator(minHeight: 2) : null,
         ),
+        if (_error != null && _statuses.isEmpty)
+          Expanded(child: _StateMessage(message: _error!, action: _refresh))
+        else if (_statuses.isEmpty && !_loading)
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(
+                    height: 220,
+                    child: Center(child: Text(t('No posts yet'))),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView.separated(
+                controller: _scroll,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                itemCount: _statuses.length + (_loadingMore ? 1 : 0),
+                // Ghost feeds the blur-ahead area so scrolling never shows blanks.
+                addAutomaticKeepAlives: false,
+                addRepaintBoundaries: true,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, i) => i == _statuses.length
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                            child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2))))
+                    : _PostTile(
+                        key: ValueKey(_statuses[i]['id'] ?? i),
+                        post: Post(_statuses[i], _activeApi!.instance.host),
+                        onProfile: widget.onOpenProfile,
+                        onTap: () => _openThread(context, _statuses[i]),
+                        onReply: (status) =>
+                            _openThread(context, status, focusReply: true),
+                      ),
+              ),
+            ),
+          ),
       ]);
+  }
 
   void _openBookmarks() {
     final wide = MediaQuery.sizeOf(context).width >= 760;
@@ -1542,11 +1643,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openThread(BuildContext context, Map<String, dynamic> status,
       {bool focusReply = false}) {
-    final focusId = status['id'] as String? ?? '';
+    final target = status['reblog'] as Map<String, dynamic>? ?? status;
+    final focusId = target['id'] as String? ?? '';
     return showDialog<void>(
       context: context,
       builder: (_) => _ThreadDialog(
-          status: status,
+          status: target,
           focusId: focusId,
           openReply: focusReply,
           onProfile: widget.onOpenProfile),
@@ -1969,9 +2071,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ),
             if (_category == 'Posts')
               for (final status in _statuses)
-                _PostTile(
-                  post: Post(status, _activeApi!.instance.host),
-                  onProfile: widget.onOpenProfile,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: _PostTile(
+                    post: Post(status, _activeApi!.instance.host),
+                    onProfile: widget.onOpenProfile,
+                  ),
                 ),
           ]),
         ),
@@ -2003,6 +2108,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       setState(() => _loading = false);
       return;
     }
+    setState(() => _error = null);
     final key = 'notifications-${_currentAccountId ?? 'anon'}-$_segment';
     final cached = _appStore?.cachedStatuses(key);
     if (cached != null && cached.isNotEmpty) {
@@ -2274,6 +2380,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _loading = false);
       return;
     }
+    setState(() => _error = null);
     _loadRelationship(account['id'] as String);
     final key = _cacheKey;
     final cached = key == null ? null : _appStore?.cachedStatuses(key);
@@ -2372,11 +2479,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: const Icon(Icons.more_horiz), label: Text(t('Account')))),
           const Divider(height: 28),
           if (_loading) const LinearProgressIndicator(),
-          if (_error != null) Text('Could not load posts: $_error'),
+          if (_error != null) _StateMessage(message: _error!, action: _load),
           if (_statuses.isEmpty && !_loading && _error == null)
             Center(child: Padding(padding: const EdgeInsets.all(20), child: Text(t('No posts yet')))),
           for (final status in _statuses)
-            _PostTile(post: Post(status, host), onProfile: widget.onOpenProfile),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _PostTile(post: Post(status, host), onProfile: widget.onOpenProfile),
+            ),
         ]),
       ),
     ]);
@@ -2504,22 +2614,55 @@ class _TimelineFilter extends StatelessWidget {
   final List<String> options;
   final ValueChanged<int> onSelect;
   @override
-  Widget build(BuildContext context) => SizedBox(
-        height: 42,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            for (var i = 0; i < options.length; i++)
-              TextButton(
-                onPressed: () => onSelect(i),
-                child: Text(options[i],
-                    style: TextStyle(
-                        fontWeight: selected == i ? FontWeight.bold : FontWeight.normal,
-                        color: selected == i ? _green : null)),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        itemCount: options.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final active = selected == i;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: active
+                  ? scheme.primaryContainer
+                  : scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: active
+                    ? scheme.primary.withValues(alpha: 0.35)
+                    : scheme.outlineVariant.withValues(alpha: 0.45),
               ),
-          ],
-        ),
-      );
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => onSelect(i),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Center(
+                  child: Text(
+                    options[i],
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      color: active
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 /// Host without the noise most instances put in front of it.
@@ -2532,7 +2675,8 @@ class _StateMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cleanMessage = message.replaceFirst(RegExp(r'^(Exception|FediverseException):\s*'), '');
+    final cleanMessage = message.replaceFirst(
+        RegExp(r'^(Exception|FediverseException|Fediverse API error \(\d+\)):\s*'), '');
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
@@ -2596,7 +2740,7 @@ class _StateMessage extends StatelessWidget {
 }
 
 class _PostTile extends StatefulWidget {
-  const _PostTile({required this.post, required this.onProfile,
+  const _PostTile({super.key, required this.post, required this.onProfile,
       this.onReply, this.onTap});
   final Post post;
   final ValueChanged<String> onProfile;
@@ -2608,9 +2752,25 @@ class _PostTile extends StatefulWidget {
 }
 
 class _PostTileState extends State<_PostTile> {
-  /// Local override for like/boost flags so the icon reacts before a refetch.
+  /// Local override for like/boost flags and counts so the tile reacts immediately.
   final _optimistic = <String, bool>{};
+  final _countDeltas = <String, int>{};
   Post get post => widget.post;
+
+  @override
+  void didUpdateWidget(covariant _PostTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) {
+      _optimistic.clear();
+      _countDeltas.clear();
+    }
+  }
+
+  int? _count(String key, String flag) {
+    final base = (post.data[key] as num?)?.toInt();
+    final delta = _countDeltas[flag] ?? 0;
+    return base == null && delta == 0 ? null : (base ?? 0) + delta;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2620,15 +2780,43 @@ class _PostTileState extends State<_PostTile> {
     final favourited = _optimistic['favourited'] ?? post.data['favourited'] == true;
     final reblogged = _optimistic['reblogged'] ?? post.data['reblogged'] == true;
     final bookmarked = _optimistic['bookmarked'] ?? post.data['bookmarked'] == true;
+    final repostedBy = post.repostedBy;
     final emojis = (post.data['emojis'] as List<dynamic>?) ?? const [];
     final theme = Theme.of(context);
     final signedIn = _currentAccount != null;
     return Card(
       color: theme.colorScheme.surfaceContainerLow,
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: widget.onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (repostedBy != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(children: [
+                const Icon(Icons.repeat, size: 15, color: _green),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    '$repostedBy ${t('reposted')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ]),
+            ),
           InkWell(
             onTap: () => widget.onProfile(post.acct),
             child: Row(children: [
@@ -2660,44 +2848,55 @@ class _PostTileState extends State<_PostTile> {
           ),
           const SizedBox(height: 12),
           if (spoiler.isNotEmpty)
-            _Spoiler(content: post.content, warning: spoiler, emojis: emojis)
+            _Spoiler(content: post.content, warning: spoiler, emojis: emojis,
+                onProfile: widget.onProfile, selectable: widget.onTap == null)
           else
-            _HtmlText(html: post.content, emojis: emojis, onProfile: widget.onProfile),
+            _HtmlText(html: post.content, emojis: emojis,
+                onProfile: widget.onProfile, selectable: widget.onTap == null),
           if (attachments.isNotEmpty)
             _MediaGallery(attachments: [
               for (final attachment in attachments)
                 if (attachment is Map<String, dynamic> && attachment['url'] != null)
                   attachment,
             ], sensitive: sensitive && spoiler.isEmpty),
-          Row(children: [
-            _ActionCount(
-                tooltip: t('Reply'),
-                onPressed: _handleReply,
-                icon: const Icon(Icons.mode_comment_outlined, size: 20),
-                count: (post.data['replies_count'] as num?)?.toInt()),
-            _ActionCount(
-                tooltip: favourited ? t('Unlike') : t('Like'),
-                onPressed: signedIn ? () => _toggle('favourited', favourited, 'like', post.id) : null,
-                icon: Icon(favourited ? Icons.favorite : Icons.favorite_border,
-                    size: 20, color: favourited ? const Color(0xFFE0245E) : null),
-                count: (post.data['favourites_count'] as num?)?.toInt(),
-                highlighted: favourited),
-            _ActionCount(
-                tooltip: reblogged ? t('Undo boost') : t('Boost'),
-                onPressed: signedIn ? () => _toggle('reblogged', reblogged, 'repost', post.id) : null,
-                icon: Icon(Icons.repeat, size: 20, color: reblogged ? _green : null),
-                count: (post.data['reblogs_count'] as num?)?.toInt(),
-                highlighted: reblogged),
-            IconButton(
-                tooltip: bookmarked ? t('Remove bookmark') : t('Bookmark'),
-                onPressed: signedIn
-                    ? () => _toggle('bookmarked', bookmarked, 'bookmark', post.id)
-                    : null,
-                icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border)),
-            const Spacer(),
-            IconButton(tooltip: t('Share'), onPressed: () => _share(context, post), icon: const Icon(Icons.ios_share)),
-          ]),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(children: [
+              _ActionCount(
+                  tooltip: t('Reply'),
+                  onPressed: _handleReply,
+                  icon: const Icon(Icons.mode_comment_outlined, size: 20),
+                  count: (post.data['replies_count'] as num?)?.toInt()),
+              _ActionCount(
+                  tooltip: favourited ? t('Unlike') : t('Like'),
+                  onPressed: signedIn ? () => _toggle('favourited', favourited, 'like', post.id) : null,
+                  icon: Icon(favourited ? Icons.favorite : Icons.favorite_border,
+                      size: 20, color: favourited ? const Color(0xFFE0245E) : null),
+                  count: _count('favourites_count', 'favourited'),
+                  highlighted: favourited),
+              _ActionCount(
+                  tooltip: reblogged ? t('Undo boost') : t('Boost'),
+                  onPressed: signedIn ? () => _toggle('reblogged', reblogged, 'repost', post.id) : null,
+                  icon: Icon(Icons.repeat, size: 20, color: reblogged ? _green : null),
+                  count: _count('reblogs_count', 'reblogged'),
+                  highlighted: reblogged),
+              IconButton(
+                  tooltip: bookmarked ? t('Remove bookmark') : t('Bookmark'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: signedIn
+                      ? () => _toggle('bookmarked', bookmarked, 'bookmark', post.id)
+                      : null,
+                  icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border, size: 20)),
+              const Spacer(),
+              IconButton(
+                  tooltip: t('Share'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _share(context, post),
+                  icon: const Icon(Icons.ios_share, size: 20)),
+            ]),
+          ),
         ]),
+        ),
       ),
     );
   }
@@ -2740,12 +2939,25 @@ class _PostTileState extends State<_PostTile> {
     );
   }
 
-  /// Calls the API, then flips the flag locally so the icon reacts instantly.
+  /// Flips the flag and count immediately, then reconciles or reverts on error.
   Future<void> _toggle(String flag, bool on, String action, String id) async {
+    final prevDelta = _countDeltas[flag] ?? 0;
+    setState(() {
+      _optimistic[flag] = !on;
+      _countDeltas[flag] = prevDelta + (on ? -1 : 1);
+    });
     try {
       final result = await _activeApi!.action(id, on ? 'un$action' : action);
-      setState(() => _optimistic[flag] = result[flag] == true);
-    } catch (_) {}
+      if (mounted) setState(() => _optimistic[flag] = result[flag] == true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _optimistic[flag] = on;
+        _countDeltas[flag] = prevDelta;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('Something went wrong'))));
+    }
   }
 }
 
@@ -2863,10 +3075,13 @@ Future<void> _share(BuildContext context, Post post) async {
 }
 
 class _Spoiler extends StatefulWidget {
-  const _Spoiler({required this.content, required this.warning, this.emojis = const []});
+  const _Spoiler({required this.content, required this.warning,
+      this.emojis = const [], this.onProfile, this.selectable = false});
   final String content;
   final String warning;
   final List<dynamic> emojis;
+  final ValueChanged<String>? onProfile;
+  final bool selectable;
   @override
   State<_Spoiler> createState() => _SpoilerState();
 }
@@ -2894,16 +3109,20 @@ class _SpoilerState extends State<_Spoiler> {
           onPressed: () => setState(() => _show = !_show),
           icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
           label: Text(_show ? t('Hide sensitive content') : t('Show sensitive content'))),
-      if (_show) _HtmlText(html: widget.content, emojis: widget.emojis),
+      if (_show)
+        _HtmlText(html: widget.content, emojis: widget.emojis,
+            onProfile: widget.onProfile, selectable: widget.selectable),
     ]);
   }
 }
 
 class _HtmlText extends StatefulWidget {
-  const _HtmlText({required this.html, this.emojis = const [], this.onProfile});
+  const _HtmlText({required this.html, this.emojis = const [],
+      this.onProfile, this.selectable = false});
   final String html;
   final List<dynamic> emojis;
   final ValueChanged<String>? onProfile;
+  final bool selectable;
   @override
   State<_HtmlText> createState() => _HtmlTextState();
 }
@@ -2937,6 +3156,10 @@ class _HtmlTextState extends State<_HtmlText> {
   }
 
   List<InlineSpan> _parseSpans(String text, TextStyle? style, ValueChanged<String>? onProfile, Map<String, String> emojiMap) {
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    _recognizers.clear();
     final spans = <InlineSpan>[];
     var start = 0;
     final combinedPattern = RegExp(r'(@[\w]+(?:@[\w\.\-]+)?)|(:[a-zA-Z0-9_]+:)');
@@ -2991,9 +3214,8 @@ class _HtmlTextState extends State<_HtmlText> {
     final theme = Theme.of(context);
     final emojiMap = _buildEmojiMap();
     final spans = _parseSpans(text, theme.textTheme.bodyMedium, widget.onProfile, emojiMap);
-    return SelectionArea(
-      child: Text.rich(TextSpan(style: theme.textTheme.bodyMedium, children: spans)),
-    );
+    final rich = Text.rich(TextSpan(style: theme.textTheme.bodyMedium, children: spans));
+    return widget.selectable ? SelectionArea(child: rich) : rich;
   }
 }
 
@@ -3049,24 +3271,38 @@ class _MediaGallery extends StatelessWidget {
                   child: Container(
                     color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: Stack(fit: StackFit.expand, children: [
-                      Image(
-                          image: CachedNetworkImage(
-                              attachment['preview_url'] as String? ??
-                                  attachment['url'] as String,
-                              maxWidthPx: 900),
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => Icon(
-                              attachment['type'] == 'audio'
-                                  ? Icons.audio_file_outlined
-                                  : attachment['type'] == 'video'
-                                      ? Icons.videocam_outlined
-                                      : Icons.image_outlined)),
-                      if (attachment['type'] == 'video')
+                      if (_thumbnailUrl(attachment) case final thumb?)
+                        Image(
+                            image: CachedNetworkImage(thumb, maxWidthPx: 900),
+                            fit: single ? BoxFit.contain : BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _mediaFallbackIcon(attachment))
+                      else
+                        Center(child: _mediaFallbackIcon(attachment)),
+                      if (attachment['type'] == 'video' || attachment['type'] == 'gifv')
                         const Center(
                           child: Icon(Icons.play_circle_fill,
-                              size: 44, shadows: [
-                            Shadow(blurRadius: 8, color: Colors.black54)
-                          ]),
+                              color: Colors.white,
+                              size: 44,
+                              shadows: [
+                                Shadow(blurRadius: 8, color: Colors.black54)
+                              ]),
+                        ),
+                      if (attachment['type'] == 'gifv')
+                        Positioned(
+                          left: 8,
+                          bottom: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black87,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('GIF',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700)),
+                          ),
                         ),
                       if (sensitive) const _SensitiveScrim(),
                     ]),
@@ -3145,13 +3381,32 @@ class _MediaPreview extends StatefulWidget {
 
 class _MediaPreviewState extends State<_MediaPreview> {
   late int _index = widget.initialIndex;
+  late final _pageController = PageController(initialPage: widget.initialIndex);
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _goTo(int next) {
+    if (next < 0 || next >= widget.attachments.length) return;
+    _pageController.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final total = widget.attachments.length;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
+        title: total > 1 ? Text('${_index + 1} / $total') : null,
         actions: [
           if (_altText.isNotEmpty)
             IconButton(
@@ -3177,13 +3432,44 @@ class _MediaPreviewState extends State<_MediaPreview> {
         // Any tap that lands outside the media itself dismisses the preview;
         // taps on the image land on the child and are swallowed by it.
         onTap: () => Navigator.of(context).maybePop(),
-        child: Container(color: Colors.transparent, child: widget.attachments.length == 1
-            ? _centered(_current)
-            : PageView(
-                controller: PageController(initialPage: widget.initialIndex),
-                onPageChanged: (i) => setState(() => _index = i),
-                children: [for (final attachment in widget.attachments) _centered(attachment)],
+        child: Container(
+          color: Colors.transparent,
+          child: Stack(fit: StackFit.expand, children: [
+            total == 1
+                ? _centered(_current)
+                : PageView(
+                    controller: _pageController,
+                    onPageChanged: (i) => setState(() => _index = i),
+                    children: [
+                      for (final attachment in widget.attachments)
+                        _centered(attachment),
+                    ],
+                  ),
+            if (total > 1 && _index > 0)
+              Positioned(
+                left: 12,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: IconButton.filledTonal(
+                    onPressed: () => _goTo(_index - 1),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                ),
               ),
+            if (total > 1 && _index < total - 1)
+              Positioned(
+                right: 12,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: IconButton.filledTonal(
+                    onPressed: () => _goTo(_index + 1),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ),
+              ),
+          ]),
         ),
       ),
     );
@@ -3197,13 +3483,22 @@ class _MediaPreviewState extends State<_MediaPreview> {
   Widget _centered(Map<String, dynamic> attachment) {
     final type = attachment['type'] as String? ?? 'image';
     final src = attachment['url'] as String? ?? '';
-    if ((type == 'video' || type == 'audio') && src.isNotEmpty) {
-      return _VideoPlayerView(
-        src: src,
-        audioOnly: type == 'audio',
-        poster: attachment['preview_url'] as String?,
+    final preview = attachment['preview_url'] as String?;
+    if ((type == 'video' || type == 'gifv' || type == 'audio') && src.isNotEmpty) {
+      return Center(
+        child: GestureDetector(
+          onTap: () {},
+          child: _VideoPlayerView(
+            src: src,
+            audioOnly: type == 'audio',
+            loop: type == 'gifv',
+            aspectRatio: _attachmentAspect(attachment),
+            poster: preview,
+          ),
+        ),
       );
     }
+    final primaryUrl = src.isNotEmpty ? src : (preview ?? '');
     return Center(
       child: GestureDetector(
         // Swallow taps on the media so only background taps close.
@@ -3211,11 +3506,20 @@ class _MediaPreviewState extends State<_MediaPreview> {
         child: InteractiveViewer(
           maxScale: 4,
           child: Image(
-            image: CachedNetworkImage(
-                attachment['preview_url'] as String? ??
-                    attachment['url'] as String,
-                maxWidthPx: 1600),
+            image: CachedNetworkImage(primaryUrl, maxWidthPx: 1600),
             fit: BoxFit.contain,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded || frame != null) return child;
+              if (preview != null && preview.isNotEmpty && preview != primaryUrl) {
+                return Image(
+                  image: CachedNetworkImage(preview, maxWidthPx: 900),
+                  fit: BoxFit.contain,
+                );
+              }
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.white70),
+              );
+            },
             errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined,
                 color: Colors.white54, size: 48),
           ),
@@ -3227,9 +3531,17 @@ class _MediaPreviewState extends State<_MediaPreview> {
 
 /// Single shared libmpv player per preview lifecycle.
 class _VideoPlayerView extends StatefulWidget {
-  const _VideoPlayerView({required this.src, this.audioOnly = false, this.poster});
+  const _VideoPlayerView({
+    required this.src,
+    this.audioOnly = false,
+    this.loop = false,
+    this.aspectRatio = 16 / 9,
+    this.poster,
+  });
   final String src;
   final bool audioOnly;
+  final bool loop;
+  final double aspectRatio;
   final String? poster;
   @override
   State<_VideoPlayerView> createState() => _VideoPlayerViewState();
@@ -3248,6 +3560,9 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
   Future<void> _open() async {
     final local = await CachedNetworkImage.cachedFile(widget.src);
     if (!mounted) return;
+    if (widget.loop) {
+      await _player.setPlaylistMode(PlaylistMode.single);
+    }
     await _player.open(Media(local?.path ?? widget.src));
   }
 
@@ -3259,7 +3574,7 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
 
   @override
   Widget build(BuildContext context) {
-    final video = Video(controller: _controller, controls: NoVideoControls);
+    final video = Video(controller: _controller, controls: AdaptiveVideoControls);
     final themed = MaterialVideoControlsTheme(
       normal: _controlsTheme,
       fullscreen: _controlsTheme,
@@ -3269,19 +3584,49 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
       return Column(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.audiotrack, size: 48, color: Colors.white54),
         const SizedBox(height: 8),
-        SizedBox(width: 480, child: themed),
+        SizedBox(width: 480, height: 120, child: themed),
       ]);
     }
-    return AspectRatio(aspectRatio: 16 / 9, child: themed);
+    return AspectRatio(aspectRatio: widget.aspectRatio, child: themed);
   }
 
   static const _controlsTheme = MaterialVideoControlsThemeData(
       seekBarThumbColor: _green);
 }
 
+String? _thumbnailUrl(Map<String, dynamic> attachment) {
+  final preview = attachment['preview_url'] as String?;
+  if (preview != null && preview.isNotEmpty) return preview;
+  final type = attachment['type'] as String? ?? 'image';
+  if (type == 'image') {
+    final url = attachment['url'] as String?;
+    if (url != null && url.isNotEmpty) return url;
+  }
+  return null;
+}
+
+Widget _mediaFallbackIcon(Map<String, dynamic> attachment) => Icon(
+    attachment['type'] == 'audio'
+        ? Icons.audio_file_outlined
+        : attachment['type'] == 'video' || attachment['type'] == 'gifv'
+            ? Icons.videocam_outlined
+            : Icons.image_outlined);
+
 double _attachmentAspect(Map<String, dynamic> attachment) {
-  final w = attachment['meta']?['small']?['width'];
-  final h = attachment['meta']?['small']?['height'];
-  if (w is num && h is num && h > 0) return (w / h).clamp(0.5, 3.0);
+  final meta = attachment['meta'];
+  if (meta is Map) {
+    final orig = meta['original'];
+    if (orig is Map) {
+      final w = orig['width'];
+      final h = orig['height'];
+      if (w is num && h is num && h > 0) return (w / h).clamp(0.5, 3.0);
+    }
+    final small = meta['small'];
+    if (small is Map) {
+      final w = small['width'];
+      final h = small['height'];
+      if (w is num && h is num && h > 0) return (w / h).clamp(0.5, 3.0);
+    }
+  }
   return 16 / 9;
 }

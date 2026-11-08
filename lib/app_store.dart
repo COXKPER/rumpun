@@ -36,6 +36,12 @@ class AppStore {
     mainDb.execute('''CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY, instance TEXT NOT NULL, username TEXT,
       display_name TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)''');
+    mainDb.execute('''CREATE TABLE IF NOT EXISTS drafts (
+      key TEXT PRIMARY KEY, text TEXT NOT NULL DEFAULT '',
+      spoiler TEXT NOT NULL DEFAULT '', visibility TEXT NOT NULL DEFAULT 'public',
+      in_reply_to_id TEXT, in_reply_to_acct TEXT,
+      media_count INTEGER NOT NULL DEFAULT 0,
+      saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)''');
     cacheDb.execute('''CREATE TABLE IF NOT EXISTS statuses (
       id TEXT PRIMARY KEY, timeline TEXT NOT NULL, payload TEXT NOT NULL,
       cached_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)''');
@@ -133,7 +139,7 @@ class AppStore {
       for (final status in statuses) {
         final id = status['id'];
         if (id is String && id.isNotEmpty) {
-          batch.execute([id, timeline, encodeCache(status)]);
+          batch.execute(['$timeline:$id', timeline, encodeCache(status)]);
         }
       }
       cacheDb.execute('COMMIT');
@@ -147,7 +153,7 @@ class AppStore {
 
   List<Map<String, dynamic>> cachedStatuses(String timeline, {int limit = 40}) =>
       cacheDb.select('SELECT payload FROM statuses WHERE timeline=? '
-          'ORDER BY cached_at DESC LIMIT ?', [timeline, limit])
+          'ORDER BY cached_at DESC, rowid ASC LIMIT ?', [timeline, limit])
           .map((row) => decodeCache(row['payload'] as String))
           .whereType<Map<String, dynamic>>()
           .toList();
