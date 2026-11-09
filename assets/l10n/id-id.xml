@@ -124,4 +124,11 @@
   <string name="Post published">Postingan diterbitkan</string>
   <string name="Push subscription updated">Langganan push diperbarui</string>
   <string name="Support & feedback">Bantuan & umpan balik</string>
+  <string name="Edit post">Edit postingan</string>
+  <string name="Delete post">Hapus postingan</string>
+  <string name="Post deleted">Postingan dihapus</string>
+  <string name="Post updated">Postingan diperbarui</string>
+  <string name="Change avatar">Ganti foto profil</string>
+  <string name="Change banner">Ganti banner</string>
+  <string name="Profile updated">Profil diperbarui</string>
 </strings>

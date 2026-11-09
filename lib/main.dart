@@ -129,6 +129,141 @@ class _RumpunAppState extends State<RumpunApp> {
         _ => ThemeMode.system,
       };
 
+  ThemeData _buildTheme(ColorScheme scheme) => ThemeData(
+        colorScheme: scheme,
+        useMaterial3: true,
+        fontFamily: '.SF Pro Text',
+        scaffoldBackgroundColor: scheme.surface,
+        appBarTheme: AppBarTheme(
+          backgroundColor: scheme.surfaceContainer,
+          scrolledUnderElevation: 0,
+          elevation: 0,
+          titleTextStyle: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface,
+          ),
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          elevation: 0,
+          backgroundColor: scheme.surfaceContainer,
+          indicatorColor: scheme.primaryContainer,
+          indicatorShape: const StadiumBorder(),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
+              letterSpacing: 0.1,
+            );
+          }),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return IconThemeData(
+              color: selected
+                  ? scheme.onPrimaryContainer
+                  : scheme.onSurfaceVariant,
+              size: 24,
+            );
+          }),
+        ),
+        navigationRailTheme: NavigationRailThemeData(
+          elevation: 0,
+          backgroundColor: scheme.surfaceContainer,
+          indicatorColor: scheme.primaryContainer,
+          indicatorShape: const StadiumBorder(),
+          labelType: NavigationRailLabelType.all,
+          selectedLabelTextStyle: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface,
+          ),
+          unselectedLabelTextStyle: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: scheme.onSurfaceVariant,
+          ),
+          selectedIconTheme: IconThemeData(
+            color: scheme.onPrimaryContainer,
+            size: 24,
+          ),
+          unselectedIconTheme: IconThemeData(
+            color: scheme.onSurfaceVariant,
+            size: 24,
+          ),
+        ),
+        navigationDrawerTheme: NavigationDrawerThemeData(
+          elevation: 0,
+          backgroundColor: scheme.surfaceContainer,
+          indicatorColor: scheme.primaryContainer,
+          indicatorShape: const StadiumBorder(),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return TextStyle(
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
+            );
+          }),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return IconThemeData(
+              color: selected
+                  ? scheme.onPrimaryContainer
+                  : scheme.onSurfaceVariant,
+              size: 24,
+            );
+          }),
+        ),
+        floatingActionButtonTheme: FloatingActionButtonThemeData(
+          backgroundColor: scheme.primaryContainer,
+          foregroundColor: scheme.onPrimaryContainer,
+          elevation: 2,
+          focusElevation: 4,
+          hoverElevation: 3,
+          highlightElevation: 4,
+          shape: const StadiumBorder(),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          showCloseIcon: true,
+        ),
+        cardTheme: CardThemeData(
+          color: scheme.surfaceContainerLow,
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        badgeTheme: BadgeThemeData(
+          backgroundColor: scheme.primary,
+          textColor: scheme.onPrimary,
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
+        segmentedButtonTheme: SegmentedButtonThemeData(
+          style: ButtonStyle(
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+        ),
+        bottomSheetTheme: BottomSheetThemeData(
+          backgroundColor: scheme.surfaceContainerLow,
+          showDragHandle: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: scheme.surfaceContainerHigh,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) => DynamicColorBuilder(
         builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
@@ -158,66 +293,8 @@ class _RumpunAppState extends State<RumpunApp> {
                   PointerDeviceKind.trackpad,
                 },
               ),
-              theme: ThemeData(
-                colorScheme: lightScheme,
-                useMaterial3: true,
-                fontFamily: '.SF Pro Text',
-                scaffoldBackgroundColor: lightScheme.surface,
-                snackBarTheme: SnackBarThemeData(
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  showCloseIcon: true,
-                ),
-                cardTheme: CardThemeData(
-                  color: lightScheme.surfaceContainerLow,
-                  elevation: 0,
-                  margin: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                navigationBarTheme: const NavigationBarThemeData(
-                  elevation: 0,
-                  indicatorShape: StadiumBorder(),
-                ),
-                bottomSheetTheme: const BottomSheetThemeData(
-                  showDragHandle: true,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                  ),
-                ),
-                dialogTheme: DialogThemeData(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                ),
-              ),
-              darkTheme: ThemeData(
-                colorScheme: darkScheme,
-                useMaterial3: true,
-                fontFamily: '.SF Pro Text',
-                scaffoldBackgroundColor: darkScheme.surface,
-                snackBarTheme: SnackBarThemeData(
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  showCloseIcon: true,
-                ),
-                cardTheme: CardThemeData(
-                  color: darkScheme.surfaceContainerLow,
-                  elevation: 0,
-                  margin: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                navigationBarTheme: const NavigationBarThemeData(
-                  elevation: 0,
-                  indicatorShape: StadiumBorder(),
-                ),
-                bottomSheetTheme: const BottomSheetThemeData(
-                  showDragHandle: true,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                  ),
-                ),
-                dialogTheme: DialogThemeData(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                ),
-              ),
+              theme: _buildTheme(lightScheme),
+              darkTheme: _buildTheme(darkScheme),
               locale: _localeOverride,
               // DefaultMaterialLocalizations is English-only; without these an
               // `id_ID` locale leaves MaterialLocalizations null and every
@@ -334,18 +411,17 @@ class _RumpunShellState extends State<RumpunShell> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final chromeColor =
-        (isDark ? const Color(0xFF202422) : Colors.white).withValues(alpha: 0.96);
+        theme.colorScheme.surfaceContainer.withValues(alpha: 0.96);
     final borderColor =
-        theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.12 : 0.10);
+        theme.colorScheme.outlineVariant.withValues(alpha: 0.35);
     final wide = MediaQuery.sizeOf(context).width >= 760;
     final youLabel = _profileAccount == null ? t('You') : t('Profile');
     final pages = [
       HomeScreen(key: _homeKey, onOpenProfile: _openProfile, onCompose: _compose),
       TweetsScreen(key: _tweetsKey, onOpenProfile: _openProfile),
       ExploreScreen(onOpenProfile: _openProfile),
-      ActivityScreen(key: _activityKey),
+      ActivityScreen(key: _activityKey, onOpenProfile: _openProfile),
       _profileAccount == null
           ? ProfileScreen(account: _currentAccount, accountId: _currentAccountId,
               onOpenProfile: _openProfile)
@@ -379,17 +455,17 @@ class _RumpunShellState extends State<RumpunShell> {
           },
           action: switch (_page) {
             0 => IconButton(
-                tooltip: 'Bookmarks',
+                tooltip: t('Bookmarks'),
                 onPressed: _currentAccount == null
                     ? null
                     : () => _homeKey.currentState?._openBookmarks(),
                 icon: const Icon(Icons.bookmark_border)),
             1 => IconButton(
-                tooltip: 'Refresh',
+                tooltip: t('Refresh'),
                 onPressed: () => _tweetsKey.currentState?.refresh(),
                 icon: const Icon(Icons.refresh)),
             3 => IconButton(
-                tooltip: 'Refresh',
+                tooltip: t('Refresh'),
                 onPressed: () => _activityKey.currentState?.refresh(),
                 icon: const Icon(Icons.refresh)),
             _ => null,
@@ -398,7 +474,7 @@ class _RumpunShellState extends State<RumpunShell> {
         floatingActionButton: _currentAccount == null
             ? null
             : FloatingActionButton.extended(
-                tooltip: 'New post',
+                tooltip: t('New post'),
                 onPressed: _compose,
                 icon: const Icon(Icons.edit_outlined),
                 label: Text(t('Post'))),
@@ -406,65 +482,78 @@ class _RumpunShellState extends State<RumpunShell> {
           child: Row(children: [
             if (wide)
               Container(
+                width: 250,
                 decoration: BoxDecoration(
                   color: chromeColor,
                   border: Border(right: BorderSide(color: borderColor)),
                 ),
-                child: NavigationRail(
+                child: NavigationDrawer(
                   backgroundColor: Colors.transparent,
-                  minWidth: 84,
-                  labelType: NavigationRailLabelType.all,
-                  indicatorColor: theme.colorScheme.primaryContainer,
-                  indicatorShape: const StadiumBorder(),
+                  elevation: 0,
                   selectedIndex: _page,
                   onDestinationSelected: selectTab,
-                  destinations: [
-                    NavigationRailDestination(
-                        icon: const Badge(
-                            isLabelVisible: false,
-                            child: Icon(Icons.home_outlined)),
-                        selectedIcon: const Badge(
-                            isLabelVisible: false,
-                            child: Icon(Icons.home_rounded)),
-                        label: Text(t('Home'))),
-                    NavigationRailDestination(
-                        icon: const Badge(
-                            isLabelVisible: false,
-                            child: Icon(Icons.forum_outlined)),
-                        selectedIcon: const Badge(
-                            isLabelVisible: false,
-                            child: Icon(Icons.forum_rounded)),
-                        label: Text(t('Tweets'))),
-                    NavigationRailDestination(
-                        icon: const Badge(
-                            isLabelVisible: false,
-                            child: Icon(Icons.explore_outlined)),
-                        selectedIcon: const Badge(
-                            isLabelVisible: false,
-                            child: Icon(Icons.explore_rounded)),
-                        label: Text(t('Explore'))),
-                    NavigationRailDestination(
-                        icon: Badge(
-                            isLabelVisible: unreadCount > 0,
-                            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
-                            child: const Icon(Icons.notifications_none_rounded)),
-                        selectedIcon: Badge(
-                            isLabelVisible: unreadCount > 0,
-                            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
-                            child: const Icon(Icons.notifications_rounded)),
-                        label: Text(t('Notifications'))),
-                    NavigationRailDestination(
-                        icon: Badge(
-                            isLabelVisible: _currentAccount != null,
-                            smallSize: 7,
-                            backgroundColor: _green,
-                            child: const Icon(Icons.person_outline_rounded)),
-                        selectedIcon: Badge(
-                            isLabelVisible: _currentAccount != null,
-                            smallSize: 7,
-                            backgroundColor: _green,
-                            child: const Icon(Icons.person_rounded)),
-                        label: Text(youLabel)),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 20, 16, 12),
+                      child: Text(
+                        'Rumpun',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    NavigationDrawerDestination(
+                      icon: const Badge(
+                          isLabelVisible: false,
+                          child: Icon(Icons.home_outlined)),
+                      selectedIcon: const Badge(
+                          isLabelVisible: false,
+                          child: Icon(Icons.home_rounded)),
+                      label: Text(t('Home')),
+                    ),
+                    NavigationDrawerDestination(
+                      icon: const Badge(
+                          isLabelVisible: false,
+                          child: Icon(Icons.forum_outlined)),
+                      selectedIcon: const Badge(
+                          isLabelVisible: false,
+                          child: Icon(Icons.forum_rounded)),
+                      label: Text(t('Tweets')),
+                    ),
+                    NavigationDrawerDestination(
+                      icon: const Badge(
+                          isLabelVisible: false,
+                          child: Icon(Icons.explore_outlined)),
+                      selectedIcon: const Badge(
+                          isLabelVisible: false,
+                          child: Icon(Icons.explore_rounded)),
+                      label: Text(t('Explore')),
+                    ),
+                    NavigationDrawerDestination(
+                      icon: Badge(
+                          isLabelVisible: unreadCount > 0,
+                          label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                          child: const Icon(Icons.notifications_none_rounded)),
+                      selectedIcon: Badge(
+                          isLabelVisible: unreadCount > 0,
+                          label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                          child: const Icon(Icons.notifications_rounded)),
+                      label: Text(t('Notifications')),
+                    ),
+                    NavigationDrawerDestination(
+                      icon: Badge(
+                          isLabelVisible: _currentAccount != null,
+                          smallSize: 7,
+                          backgroundColor: theme.colorScheme.primary,
+                          child: const Icon(Icons.person_outline_rounded)),
+                      selectedIcon: Badge(
+                          isLabelVisible: _currentAccount != null,
+                          smallSize: 7,
+                          backgroundColor: theme.colorScheme.primary,
+                          child: const Icon(Icons.person_rounded)),
+                      label: Text(youLabel),
+                    ),
                   ],
                 ),
               ),
@@ -486,7 +575,7 @@ class _RumpunShellState extends State<RumpunShell> {
                   border: Border(top: BorderSide(color: borderColor)),
                 ),
                 child: NavigationBar(
-                  height: 66,
+                  height: 70,
                   backgroundColor: Colors.transparent,
                   indicatorColor: theme.colorScheme.primaryContainer,
                   selectedIndex: _page,
@@ -530,12 +619,12 @@ class _RumpunShellState extends State<RumpunShell> {
                         icon: Badge(
                             isLabelVisible: _currentAccount != null,
                             smallSize: 7,
-                            backgroundColor: _green,
+                            backgroundColor: theme.colorScheme.primary,
                             child: const Icon(Icons.person_outline_rounded)),
                         selectedIcon: Badge(
                             isLabelVisible: _currentAccount != null,
                             smallSize: 7,
-                            backgroundColor: _green,
+                            backgroundColor: theme.colorScheme.primary,
                             child: const Icon(Icons.person_rounded)),
                         label: youLabel),
                   ],
@@ -961,49 +1050,68 @@ class _TopBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? action;
 
   @override
-  Size get preferredSize => const Size.fromHeight(52);
+  Size get preferredSize => const Size.fromHeight(56);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     return AppBar(
-      toolbarHeight: 52,
+      toolbarHeight: 56,
       scrolledUnderElevation: 0,
       backgroundColor:
-          (isDark ? const Color(0xFF202422) : Colors.white).withValues(alpha: 0.96),
+          theme.colorScheme.surfaceContainer.withValues(alpha: 0.96),
       shape: Border(
         bottom: BorderSide(
-          color: theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.12 : 0.10),
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
           width: 1,
         ),
       ),
-      leadingWidth: 44,
-      leading: const Icon(Icons.public, size: 20),
-      titleSpacing: 0,
-      title: Row(children: [
-        Text(title,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(width: 8),
-        Container(
-          width: 7,
-          height: 7,
-          decoration: const BoxDecoration(
-            color: Color(0xFF38A979),
-            shape: BoxShape.circle,
+      leadingWidth: 54,
+      leading: Padding(
+        padding: const EdgeInsets.only(left: 12),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.public,
+                size: 18, color: theme.colorScheme.onPrimaryContainer),
           ),
         ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(_displayHost(_activeApi?.instance.host ?? _instance),
+      ),
+      titleSpacing: 6,
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: isDark ? const Color(0xFF9AA4A0) : const Color(0xFF6B7470),
-              )),
-        ),
-      ]),
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                _displayHost(_activeApi?.instance.host ?? _instance),
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ]),
+        ],
+      ),
       actions: [
         if (action != null) action!,
         IconButton(
@@ -1064,11 +1172,13 @@ class _TopBar extends StatelessWidget implements PreferredSizeWidget {
 class _OAuthCancelled implements Exception {}
 
 class _ComposeSheet extends StatefulWidget {
-  const _ComposeSheet({required this.onPosted, this.replyTo});
+  const _ComposeSheet({required this.onPosted, this.replyTo, this.editPost});
   final Future<void> Function() onPosted;
   /// Set when the sheet is opened from a post's Reply button; the draft is
   /// kept under `reply:<statusId>` and the status is posted as a real reply.
   final Map<String, dynamic>? replyTo;
+  /// Set when editing an existing status authored by the user.
+  final Map<String, dynamic>? editPost;
   @override
   State<_ComposeSheet> createState() => _ComposeSheetState();
 }
@@ -1089,9 +1199,13 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   final _pollOptions = [TextEditingController(), TextEditingController()];
   static final _sensitiveWordPattern = RegExp(r'\b(suicide|kill myself|self[- ]?harm|cutting)\b', caseSensitive: false);
 
-  String get _draftKey => widget.replyTo == null
-      ? 'compose'
-      : 'reply:${widget.replyTo!['id'] ?? ''}';
+  bool get _isEditing => widget.editPost != null;
+
+  String get _draftKey => _isEditing
+      ? 'edit:${widget.editPost!['id'] ?? ''}'
+      : widget.replyTo == null
+          ? 'compose'
+          : 'reply:${widget.replyTo!['id'] ?? ''}';
   String? get _replyToId => widget.replyTo?['id'] as String?;
   String? get _replyToName => _replyName(widget.replyTo);
 
@@ -1107,17 +1221,44 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   void initState() {
     super.initState();
     _visibility = _appStore?.setting('default_visibility', 'public') ?? 'public';
-    // Restore the draft for this slot (a half-written reply survives a tab
-    // switch), then keep it saved as the user types.
-    final draft = _appStore?.draft(_draftKey);
-    if (draft != null) {
-      final text = draft['text'] as String? ?? '';
-      final spoiler = draft['spoiler'] as String? ?? '';
-      _visibility = draft['visibility'] as String? ?? 'public';
-      _spoilerEnabled = spoiler.isNotEmpty;
-      _hasDraft = text.trim().isNotEmpty || spoiler.trim().isNotEmpty;
-      if (text.isNotEmpty) _text.text = text;
-      if (spoiler.isNotEmpty) _spoiler.text = spoiler;
+    if (_isEditing) {
+      final post = widget.editPost!;
+      final content = _plainText(post['content'] as String? ?? '');
+      final spoiler = post['spoiler_text'] as String? ?? '';
+      _text.text = content;
+      if (spoiler.isNotEmpty) {
+        _spoiler.text = spoiler;
+        _spoilerEnabled = true;
+      }
+      _visibility = post['visibility'] as String? ?? _visibility;
+      _sensitiveMedia = post['sensitive'] == true;
+      final existingMedia =
+          post['media_attachments'] as List<dynamic>? ?? const [];
+      for (final m in existingMedia) {
+        if (m is Map<String, dynamic>) {
+          _attachments.add({
+            'id': m['id'] as String? ?? '',
+            'status': 'done',
+            'preview': (m['preview_url'] ?? m['url']) as String?,
+          });
+          final altController = TextEditingController(
+              text: m['description'] as String? ?? '');
+          _alt.add(altController);
+        }
+      }
+    } else {
+      // Restore the draft for this slot (a half-written reply survives a tab
+      // switch), then keep it saved as the user types.
+      final draft = _appStore?.draft(_draftKey);
+      if (draft != null) {
+        final text = draft['text'] as String? ?? '';
+        final spoiler = draft['spoiler'] as String? ?? '';
+        _visibility = draft['visibility'] as String? ?? 'public';
+        _spoilerEnabled = spoiler.isNotEmpty;
+        _hasDraft = text.trim().isNotEmpty || spoiler.trim().isNotEmpty;
+        if (text.isNotEmpty) _text.text = text;
+        if (spoiler.isNotEmpty) _spoiler.text = spoiler;
+      }
     }
     _text.addListener(_onChanged);
     _spoiler.addListener(_onChanged);
@@ -1245,20 +1386,32 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           }
         : null;
     try {
-      await _activeApi!.post(
-        content.isEmpty ? '.' : content,
-        visibility: _visibility,
-        spoilerText: _spoilerEnabled ? _spoiler.text : null,
-        inReplyToId: _replyToId,
-        mediaIds: [
-          for (final attachment in _attachments) attachment['id'] as String
-        ],
-        sensitive: _sensitiveMedia,
-        poll: (pollData?['options'] as List?)?.length != null &&
-                (pollData!['options'] as List).length >= 2
-            ? pollData
-            : null,
-      );
+      if (_isEditing) {
+        await _activeApi!.editStatus(
+          widget.editPost!['id'] as String,
+          content.isEmpty ? '.' : content,
+          spoilerText: _spoilerEnabled ? _spoiler.text : '',
+          mediaIds: [
+            for (final attachment in _attachments) attachment['id'] as String
+          ],
+          sensitive: _sensitiveMedia,
+        );
+      } else {
+        await _activeApi!.post(
+          content.isEmpty ? '.' : content,
+          visibility: _visibility,
+          spoilerText: _spoilerEnabled ? _spoiler.text : null,
+          inReplyToId: _replyToId,
+          mediaIds: [
+            for (final attachment in _attachments) attachment['id'] as String
+          ],
+          sensitive: _sensitiveMedia,
+          poll: (pollData?['options'] as List?)?.length != null &&
+                  (pollData!['options'] as List).length >= 2
+              ? pollData
+              : null,
+        );
+      }
       _appStore?.deleteDraft(_draftKey);
       _text.clear();
       _spoiler.clear();
@@ -1283,7 +1436,13 @@ class _ComposeSheetState extends State<_ComposeSheet> {
             20, 16, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text(replyTo == null ? t('New post') : t('Reply to @{name}', args: {'name': _replyToName ?? ''}),
+            Text(
+                _isEditing
+                    ? t('Edit post')
+                    : replyTo == null
+                        ? t('New post')
+                        : t('Reply to @{name}',
+                            args: {'name': _replyToName ?? ''}),
                 style: theme.textTheme.titleMedium),
             const Spacer(),
             if (_hasDraft)
@@ -1599,7 +1758,11 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                       _attachments.any((a) => a['status'] != 'done')
                   ? null
                   : _submit,
-              child: Text(_posting ? t('Posting…') : t('Post')),
+              child: Text(_posting
+                  ? t('Posting…')
+                  : _isEditing
+                      ? t('Save')
+                      : t('Post')),
             ),
           ]),
         ]),
@@ -2280,6 +2443,89 @@ class _BookmarksSheetState extends State<_BookmarksSheet> {
       );
 }
 
+class _TagTimelineSheet extends StatefulWidget {
+  const _TagTimelineSheet({required this.tag, required this.onOpenProfile});
+  final String tag;
+  final ValueChanged<String> onOpenProfile;
+  @override
+  State<_TagTimelineSheet> createState() => _TagTimelineSheetState();
+}
+
+class _TagTimelineSheetState extends State<_TagTimelineSheet> {
+  List<Map<String, dynamic>> _statuses = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _activeApi!.tagTimeline(widget.tag);
+      if (mounted) setState(() => _statuses = data);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.tag, size: 20),
+              const SizedBox(width: 6),
+              Text('#${widget.tag}',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              IconButton(
+                tooltip: t('Close'),
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ]),
+            if (_loading) const LinearProgressIndicator(),
+            if (_error != null) _StateMessage(message: _error!, action: _load),
+            if (_statuses.isEmpty && !_loading && _error == null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: Text(t('No posts yet'))),
+              ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 20),
+                itemCount: _statuses.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, i) => _PostTile(
+                  post: Post(_statuses[i], _activeApi!.instance.host),
+                  onProfile: (acct) {
+                    final shell =
+                        context.findAncestorStateOfType<_RumpunShellState>();
+                    Navigator.pop(context);
+                    shell?._openProfile(acct);
+                  },
+                  onTap: () {},
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
 /// Dedicated Fediverse posts stream (Federated, Local, Trending).
 class TweetsScreen extends StatefulWidget {
   const TweetsScreen({super.key, required this.onOpenProfile});
@@ -2634,8 +2880,37 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   subtitle: Text('${tag['history']?.length ?? 0} ${t('posts')}'),
                   onTap: () {
                     final name = tag['name'] as String? ?? '';
-                    _search.text = name;
-                    _doSearch(name);
+                    if (name.isEmpty) return;
+                    final wide = MediaQuery.sizeOf(context).width >= 760;
+                    if (wide) {
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => Dialog(
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24)),
+                          clipBehavior: Clip.antiAlias,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                                maxWidth: 580, maxHeight: 680),
+                            child: _TagTimelineSheet(
+                                tag: name, onOpenProfile: widget.onOpenProfile),
+                          ),
+                        ),
+                      );
+                    } else {
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        builder: (_) => ConstrainedBox(
+                          constraints: BoxConstraints(
+                              maxHeight:
+                                  MediaQuery.sizeOf(context).height * 0.85),
+                          child: _TagTimelineSheet(
+                              tag: name, onOpenProfile: widget.onOpenProfile),
+                        ),
+                      );
+                    }
                   },
                 ),
             if (_category == 'Posts')
@@ -2653,7 +2928,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
 }
 
 class ActivityScreen extends StatefulWidget {
-  const ActivityScreen({super.key});
+  const ActivityScreen({super.key, this.onOpenProfile});
+  final ValueChanged<String>? onOpenProfile;
   @override
   State<ActivityScreen> createState() => _ActivityScreenState();
 }
@@ -2768,6 +3044,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                         for (final item in _items)
                           _NotificationTile(
                             item: item,
+                            onOpenProfile: widget.onOpenProfile,
                             onDismiss: () => _dismiss(item['id'] as String? ?? ''),
                             onAuthorize: (auth) {
                               final acct = item['account'] as Map<String, dynamic>? ?? {};
@@ -2786,8 +3063,13 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
 /// Maps Mastodon notification types to readable text and action-specific icons.
 class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.item, this.onDismiss, this.onAuthorize});
+  const _NotificationTile(
+      {required this.item,
+      this.onOpenProfile,
+      this.onDismiss,
+      this.onAuthorize});
   final Map<String, dynamic> item;
+  final ValueChanged<String>? onOpenProfile;
   final VoidCallback? onDismiss;
   final ValueChanged<bool>? onAuthorize;
   @override
@@ -2811,7 +3093,28 @@ class _NotificationTile extends StatelessWidget {
       'status' => (Icons.notifications_none, theme.colorScheme.onSurface, t('posted')),
       _ => (Icons.notifications_none, theme.colorScheme.onSurface, type.isEmpty ? 'activity' : type),
     };
+    void handleTap() {
+      if (status != null) {
+        final target = status['reblog'] as Map<String, dynamic>? ?? status;
+        final focusId = target['id'] as String? ?? '';
+        showDialog<void>(
+          context: context,
+          builder: (_) => _ThreadDialog(
+            status: target,
+            focusId: focusId,
+            onProfile: onOpenProfile ?? (_) {},
+          ),
+        );
+      } else {
+        final acct = account['acct'] as String? ?? account['username'] as String?;
+        if (acct != null && acct.isNotEmpty && onOpenProfile != null) {
+          onOpenProfile!(acct);
+        }
+      }
+    }
+
     return ListTile(
+      onTap: handleTap,
       leading: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -2891,6 +3194,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Map<String, dynamic>> _statuses = [];
   bool _loading = true;
   String? _error;
+  Map<String, dynamic>? _account;
   /// Null until the relationship is known; the button is hidden until then.
   bool? _following;
   int _contentTab = 0;
@@ -2903,6 +3207,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _account = widget.account;
     _load();
   }
 
@@ -2910,14 +3215,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void didUpdateWidget(covariant ProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.account?['id'] != widget.account?['id']) {
-      setState(() => _following = null);
+      setState(() {
+        _following = null;
+        _account = widget.account;
+      });
       _load();
+    }
+  }
+
+  Future<void> _updateProfileMedia({required bool isAvatar}) async {
+    const typeGroup = XTypeGroup(label: 'Images', extensions: [
+      'jpg', 'jpeg', 'png', 'webp', 'gif'
+    ]);
+    final file = await openFile(acceptedTypeGroups: [typeGroup]);
+    if (file == null) return;
+    final api = _activeApi;
+    if (api == null) return;
+    setState(() => _loading = true);
+    try {
+      final updated = await api.updateCredentials(
+        avatar: isAvatar ? File(file.path) : null,
+        header: !isAvatar ? File(file.path) : null,
+      );
+      if (mounted) {
+        setState(() {
+          _account = updated;
+          _loading = false;
+        });
+        _currentAccount = updated;
+        _appStore?.saveAccount(
+          id: updated['id'] as String,
+          instance: api.instance.toString(),
+          username: updated['username'] as String?,
+          displayName: updated['display_name'] as String?,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('Profile updated'))),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('Something went wrong'))),
+        );
+      }
     }
   }
 
   /// Only shown for someone else's profile while signed in.
   Future<void> _loadRelationship(String accountId) async {
-    if (_currentAccount == null || _currentAccountId == accountId) return;
+    final currentId = _currentAccountId?.toString();
+    final targetId = accountId.toString();
+    final targetAcct = widget.account?['acct'] as String?;
+    final targetUsername = widget.account?['username'] as String?;
+    final currentAcct = _currentAccount?['acct'] as String?;
+    final currentUsername = _currentAccount?['username'] as String?;
+    final isOwn = _currentAccount != null &&
+        (currentId == targetId ||
+            widget.accountId == currentId ||
+            (targetAcct != null && targetAcct == currentAcct) ||
+            (targetUsername != null && targetUsername == currentUsername));
+    if (_currentAccount == null || isOwn) {
+      if (mounted) setState(() => _following = null);
+      return;
+    }
     try {
       final rel = await _activeApi!.relationship(accountId);
       if (mounted) setState(() => _following = rel['following'] == true);
@@ -2984,21 +3346,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final account = widget.account;
+    final account = _account ?? widget.account;
     if (account == null) {
       return Center(child: Text(t('Choose Log in to connect an account.')));
     }
+    final currentId = _currentAccountId?.toString();
+    final targetId = account['id']?.toString();
+    final targetAcct = account['acct'] as String?;
+    final targetUsername = account['username'] as String?;
+    final currentAcct = _currentAccount?['acct'] as String?;
+    final currentUsername = _currentAccount?['username'] as String?;
+    final isOwnAccount = _currentAccount != null &&
+        (currentId != null && currentId == targetId ||
+            widget.accountId?.toString() == currentId ||
+            (targetAcct != null && targetAcct == currentAcct) ||
+            (targetUsername != null && targetUsername == currentUsername));
     final acct = account['acct'] as String? ?? '';
     final host = acct.contains('@') ? acct.split('@').last : _activeApi!.instance.host;
     final header = account['header'] as String? ?? '';
     return Column(children: [
       Expanded(
         child: ListView(padding: const EdgeInsets.all(20), children: [
-          _ProfileBanner(header: header, account: account),
+          _ProfileBanner(
+            header: header,
+            account: account,
+            isOwn: isOwnAccount,
+            onEditBanner: () => _updateProfileMedia(isAvatar: false),
+            onEditAvatar: () => _updateProfileMedia(isAvatar: true),
+          ),
           const SizedBox(height: 54),
           Center(child: Text((account['display_name'] as String?)?.isNotEmpty == true ? account['display_name'] as String : account['username'] as String? ?? acct, style: Theme.of(context).textTheme.titleLarge)),
           Center(child: Text('@$acct')),
-          if (_following != null)
+          if (!isOwnAccount && _following != null)
             Center(
               child: Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -3064,9 +3443,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 class _ProfileBanner extends StatelessWidget {
-  const _ProfileBanner({required this.header, required this.account});
+  const _ProfileBanner({
+    required this.header,
+    required this.account,
+    this.isOwn = false,
+    this.onEditBanner,
+    this.onEditAvatar,
+  });
   final String header;
   final Map<String, dynamic> account;
+  final bool isOwn;
+  final VoidCallback? onEditBanner;
+  final VoidCallback? onEditAvatar;
 
   void _preview(BuildContext context, String url) {
     if (MediaQuery.sizeOf(context).width >= 760) {
@@ -3103,21 +3491,45 @@ class _ProfileBanner extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: AspectRatio(
             aspectRatio: 3,
-            child: GestureDetector(
-              onTap: hasHeader ? () => _preview(context, header) : null,
-              child: hasHeader
-                  ? Image(image: CachedNetworkImage(header, maxWidthPx: 1200),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const _BannerFallback())
-                  : const _BannerFallback(),
-            ),
+            child: Stack(fit: StackFit.expand, children: [
+              GestureDetector(
+                onTap: hasHeader ? () => _preview(context, header) : null,
+                child: hasHeader
+                    ? Image(image: CachedNetworkImage(header, maxWidthPx: 1200),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const _BannerFallback())
+                    : const _BannerFallback(),
+              ),
+              if (isOwn && onEditBanner != null)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton.filledTonal(
+                    tooltip: t('Change banner'),
+                    icon: const Icon(Icons.camera_alt_outlined, size: 20),
+                    onPressed: onEditBanner,
+                  ),
+                ),
+            ]),
           ),
         ),
       ),
-      GestureDetector(
-        onTap: avatarUrl.isNotEmpty ? () => _preview(context, avatarUrl) : null,
-        child: _Avatar(account: account, radius: 54),
-      ),
+      Stack(alignment: Alignment.bottomRight, children: [
+        GestureDetector(
+          onTap: avatarUrl.isNotEmpty ? () => _preview(context, avatarUrl) : null,
+          child: _Avatar(account: account, radius: 54),
+        ),
+        if (isOwn && onEditAvatar != null)
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: IconButton.filled(
+              tooltip: t('Change avatar'),
+              icon: const Icon(Icons.camera_alt, size: 18),
+              onPressed: onEditAvatar,
+            ),
+          ),
+      ]),
     ]);
   }
 }
@@ -3324,7 +3736,28 @@ class _PostTileState extends State<_PostTile> {
   /// Local override for like/boost flags and counts so the tile reacts immediately.
   final _optimistic = <String, bool>{};
   final _countDeltas = <String, int>{};
+  bool _isDeleted = false;
   Post get post => widget.post;
+
+  bool get _isOwnPost {
+    if (_currentAccount == null) return false;
+    final currentId = _currentAccountId?.toString();
+    final authorId = post.account['id']?.toString();
+    if (currentId != null && authorId != null && currentId == authorId) {
+      return true;
+    }
+    final currentAcct = _currentAccount!['acct'] as String?;
+    final currentUsername = _currentAccount!['username'] as String?;
+    final authorAcct = post.account['acct'] as String?;
+    final authorUsername = post.account['username'] as String?;
+    if (currentAcct != null && authorAcct != null && currentAcct == authorAcct) {
+      return true;
+    }
+    if (currentUsername != null && authorUsername != null && currentUsername == authorUsername) {
+      return true;
+    }
+    return false;
+  }
 
   @override
   void didUpdateWidget(covariant _PostTile oldWidget) {
@@ -3332,6 +3765,7 @@ class _PostTileState extends State<_PostTile> {
     if (oldWidget.post.id != widget.post.id) {
       _optimistic.clear();
       _countDeltas.clear();
+      _isDeleted = false;
     }
   }
 
@@ -3343,6 +3777,7 @@ class _PostTileState extends State<_PostTile> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isDeleted) return const SizedBox.shrink();
     final attachments = post.data['media_attachments'] as List<dynamic>? ?? const [];
     final spoiler = post.data['spoiler_text'] as String? ?? '';
     final sensitive = post.data['sensitive'] == true;
@@ -3389,35 +3824,48 @@ class _PostTileState extends State<_PostTile> {
                 ),
               ]),
             ),
-          InkWell(
-            onTap: () => widget.onProfile(post.acct),
-            child: Row(children: [
-              _Avatar(account: post.account, radius: 18),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(post.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                if (post.acct.contains('@'))
-                  Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('@${post.acct.split('@').first}', style: theme.textTheme.bodySmall),
-                    const SizedBox(width: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        post.acct.split('@').last,
-                        style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
-                      ),
-                    ),
-                  ])
-                else
-                  Text(post.handle, style: theme.textTheme.bodySmall),
-              ])),
-              Text(_relativeTime(post.data['created_at'] as String?), style: theme.textTheme.bodySmall),
-            ]),
-          ),
+          Row(children: [
+            Expanded(
+              child: InkWell(
+                onTap: () => widget.onProfile(post.acct),
+                child: Row(children: [
+                  _Avatar(account: post.account, radius: 18),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(post.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (post.acct.contains('@'))
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text('@${post.acct.split('@').first}', style: theme.textTheme.bodySmall),
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            post.acct.split('@').last,
+                            style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+                          ),
+                        ),
+                      ])
+                    else
+                      Text(post.handle, style: theme.textTheme.bodySmall),
+                  ])),
+                ]),
+              ),
+            ),
+            Text(_relativeTime(post.data['created_at'] as String?), style: theme.textTheme.bodySmall),
+            IconButton(
+              tooltip: t('More'),
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.menu, size: 18),
+              onPressed: () => _share(context, post,
+                  isOwnPost: _isOwnPost,
+                  onEdit: _openEdit,
+                  onDelete: _deletePost),
+            ),
+          ]),
           const SizedBox(height: 12),
           if (spoiler.isNotEmpty)
             _Spoiler(content: post.content, warning: spoiler, emojis: emojis,
@@ -3431,6 +3879,11 @@ class _PostTileState extends State<_PostTile> {
                 if (attachment is Map<String, dynamic> && attachment['url'] != null)
                   attachment,
             ], sensitive: sensitive && spoiler.isEmpty && !alwaysShowSensitive),
+          if (post.data['poll'] is Map<String, dynamic>)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _PollWidget(poll: post.data['poll'] as Map<String, dynamic>),
+            ),
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Row(children: [
@@ -3463,7 +3916,10 @@ class _PostTileState extends State<_PostTile> {
               IconButton(
                   tooltip: t('Share'),
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => _share(context, post),
+                  onPressed: () => _share(context, post,
+                      isOwnPost: _isOwnPost,
+                      onEdit: _openEdit,
+                      onDelete: _deletePost),
                   icon: const Icon(Icons.ios_share, size: 20)),
             ]),
           ),
@@ -3509,6 +3965,90 @@ class _PostTileState extends State<_PostTile> {
       useSafeArea: true,
       builder: (_) => _ComposeSheet(replyTo: post.data, onPosted: () async {}),
     );
+  }
+
+  Future<void> _openEdit() async {
+    final wide = MediaQuery.sizeOf(context).width >= 760;
+    if (wide) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 580),
+            child: SingleChildScrollView(
+              child: _ComposeSheet(
+                editPost: post.data,
+                onPosted: () async {
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(t('Post updated'))));
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _ComposeSheet(
+        editPost: post.data,
+        onPosted: () async {
+          if (context.mounted) {
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(t('Post updated'))));
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _deletePost() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('Delete post')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t('Cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t('Delete post')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final api = _activeApi;
+    if (api == null) return;
+    try {
+      await api.deleteStatus(post.id);
+      if (mounted) {
+        setState(() => _isDeleted = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t('Post deleted'))));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t('Something went wrong'))));
+      }
+    }
   }
 
   /// Flips the flag and count immediately, then reconciles or reverts on error.
@@ -3581,11 +4121,34 @@ String _compactNumber(int value) {
   return '$value';
 }
 
-Future<void> _share(BuildContext context, Post post) async {
+Future<void> _share(BuildContext context, Post post,
+    {bool isOwnPost = false,
+    VoidCallback? onEdit,
+    VoidCallback? onDelete}) async {
   final url = post.data['url'] as String? ?? '';
   final wide = MediaQuery.sizeOf(context).width >= 760;
   Widget buildItems(BuildContext ctx) => SafeArea(
     child: Column(mainAxisSize: MainAxisSize.min, children: [
+      if (isOwnPost && onEdit != null)
+        ListTile(
+          leading: const Icon(Icons.edit_outlined),
+          title: Text(t('Edit post')),
+          onTap: () {
+            Navigator.pop(ctx);
+            onEdit();
+          },
+        ),
+      if (isOwnPost && onDelete != null)
+        ListTile(
+          leading: Icon(Icons.delete_outline,
+              color: Theme.of(context).colorScheme.error),
+          title: Text(t('Delete post'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          onTap: () {
+            Navigator.pop(ctx);
+            onDelete();
+          },
+        ),
       ListTile(
         leading: const Icon(Icons.share),
         title: Text(t('Share to…')),
@@ -3644,6 +4207,140 @@ Future<void> _share(BuildContext context, Post post) async {
     context: context,
     builder: (sheetContext) => buildItems(sheetContext),
   );
+}
+
+class _PollWidget extends StatefulWidget {
+  const _PollWidget({required this.poll});
+  final Map<String, dynamic> poll;
+  @override
+  State<_PollWidget> createState() => _PollWidgetState();
+}
+
+class _PollWidgetState extends State<_PollWidget> {
+  late Map<String, dynamic> _poll = widget.poll;
+  bool _voting = false;
+
+  @override
+  void didUpdateWidget(covariant _PollWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.poll['id'] != widget.poll['id']) {
+      _poll = widget.poll;
+    }
+  }
+
+  Future<void> _vote(int index) async {
+    final api = _activeApi;
+    final pollId = _poll['id'] as String?;
+    if (api == null || pollId == null || _voting) return;
+    if (!signedInGate(context)) return;
+    setState(() => _voting = true);
+    try {
+      final updated = await api.votePoll(pollId, [index]);
+      if (mounted) setState(() => _poll = updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(t('Something went wrong'))));
+      }
+    } finally {
+      if (mounted) setState(() => _voting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final options = (_poll['options'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final voted = _poll['voted'] == true;
+    final expired = _poll['expired'] == true;
+    final showResults = voted || expired;
+    final totalVotes = (_poll['votes_count'] as num?)?.toInt() ?? 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        for (final (idx, opt) in options.indexed) ...[
+          if (idx > 0) const SizedBox(height: 8),
+          if (showResults) ...[
+            Builder(builder: (context) {
+              final count = (opt['votes_count'] as num?)?.toInt() ?? 0;
+              final ratio = totalVotes > 0 ? count / totalVotes : 0.0;
+              final title = opt['title'] as String? ?? '';
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(title,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          )),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('${(ratio * 100).toStringAsFixed(0)}%',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        )),
+                  ]),
+                  const SizedBox(height: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: ratio,
+                      minHeight: 6,
+                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ] else ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _voting ? null : () => _vote(idx),
+                style: OutlinedButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text(opt['title'] as String? ?? ''),
+              ),
+            ),
+          ],
+        ],
+        const SizedBox(height: 8),
+        Row(children: [
+          Icon(Icons.poll_outlined, size: 14, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            '$totalVotes ${t('votes')}',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (expired) ...[
+            const SizedBox(width: 8),
+            Text(
+              '· ${t('poll ended')}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ]),
+      ]),
+    );
+  }
 }
 
 class _Spoiler extends StatefulWidget {

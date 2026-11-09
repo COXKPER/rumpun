@@ -124,4 +124,11 @@
   <string name="Post published">Post published</string>
   <string name="Push subscription updated">Push subscription updated</string>
   <string name="Support & feedback">Support & feedback</string>
+  <string name="Edit post">Edit post</string>
+  <string name="Delete post">Delete post</string>
+  <string name="Post deleted">Post deleted</string>
+  <string name="Post updated">Post updated</string>
+  <string name="Change avatar">Change avatar</string>
+  <string name="Change banner">Change banner</string>
+  <string name="Profile updated">Profile updated</string>
 </strings>

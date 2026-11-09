@@ -214,4 +214,73 @@ void main() {
     expect(methods, ['POST', 'DELETE']);
     expect(paths, ['/api/v1/push/subscription', '/api/v1/push/subscription']);
   });
+
+  test('votes on a poll and loads tag timeline', () async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/polls/123/votes') {
+        return http.Response(jsonEncode({'id': '123', 'voted': true}), 200);
+      }
+      if (request.url.path == '/api/v1/timelines/tag/flutter') {
+        return http.Response(jsonEncode([{'id': 't1', 'content': 'Tag post'}]), 200);
+      }
+      return http.Response('not found', 404);
+    });
+    final api = FediverseApi('https://social.example', client: client);
+    addTearDown(api.close);
+
+    final vote = await api.votePoll('123', [0]);
+    expect(vote['voted'], true);
+
+    final posts = await api.tagTimeline('flutter');
+    expect(posts.first['id'], 't1');
+  });
+
+  test('edits and deletes a status with platform client_name', () async {
+    final paths = <String>[];
+    final methods = <String>[];
+    final bodies = <Map<String, dynamic>>[];
+    final client = MockClient((request) async {
+      paths.add(request.url.path);
+      methods.add(request.method);
+      if (request.body.isNotEmpty) {
+        bodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+      }
+      if (request.url.path == '/api/v1/statuses/99' && request.method == 'PUT') {
+        return http.Response(jsonEncode({'id': '99', 'content': 'edited'}), 200);
+      }
+      if (request.url.path == '/api/v1/statuses/99' && request.method == 'DELETE') {
+        return http.Response(jsonEncode({}), 200);
+      }
+      return http.Response('ok', 200);
+    });
+    final api = FediverseApi('https://social.example', client: client);
+    addTearDown(api.close);
+
+    expect(FediverseApi.defaultClientName, startsWith('Rumpun for '));
+
+    final edited = await api.editStatus('99', 'edited content', spoilerText: 'cw');
+    expect(edited['content'], 'edited');
+    expect(methods.first, 'PUT');
+    expect(paths.first, '/api/v1/statuses/99');
+    expect(bodies.first['status'], 'edited content');
+    expect(bodies.first['spoiler_text'], 'cw');
+
+    await api.deleteStatus('99');
+    expect(methods.last, 'DELETE');
+    expect(paths.last, '/api/v1/statuses/99');
+  });
+
+  test('updates credentials via PATCH', () async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/accounts/update_credentials' && request.method == 'PATCH') {
+        return http.Response(jsonEncode({'id': '1', 'username': 'test', 'display_name': 'New Name'}), 200);
+      }
+      return http.Response('not found', 404);
+    });
+    final api = FediverseApi('https://social.example', client: client);
+    addTearDown(api.close);
+
+    final updated = await api.updateCredentials(displayName: 'New Name');
+    expect(updated['display_name'], 'New Name');
+  });
 }

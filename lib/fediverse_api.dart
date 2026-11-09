@@ -54,9 +54,25 @@ class FediverseApi {
         : jsonDecode(response.body);
   }
 
-  Future<Map<String, dynamic>> registerApp(String redirectUri) async =>
+  static String get defaultClientName {
+    final os = Platform.isAndroid
+        ? 'Android'
+        : Platform.isLinux
+            ? 'Linux'
+            : Platform.isWindows
+                ? 'Windows'
+                : Platform.isMacOS
+                    ? 'macOS'
+                    : Platform.isIOS
+                        ? 'iOS'
+                        : 'Desktop';
+    return 'Rumpun for $os';
+  }
+
+  Future<Map<String, dynamic>> registerApp(String redirectUri,
+          {String? clientName}) async =>
       (await _request('POST', '/api/v1/apps', body: {
-        'client_name': 'Fediverse Client',
+        'client_name': clientName ?? defaultClientName,
         'redirect_uris': redirectUri,
         'scopes': 'read write follow',
       })) as Map<String, dynamic>;
@@ -127,6 +143,20 @@ class FediverseApi {
         if (mediaIds.isNotEmpty) 'media_ids': mediaIds,
         if (poll != null) 'poll': poll,
       })) as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> editStatus(String statusId, String content,
+          {String? spoilerText,
+          List<String>? mediaIds,
+          bool? sensitive}) async =>
+      (await _request('PUT', '/api/v1/statuses/$statusId', body: {
+        'status': content,
+        if (spoilerText != null) 'spoiler_text': spoilerText,
+        if (mediaIds != null) 'media_ids': mediaIds,
+        if (sensitive != null) 'sensitive': '$sensitive',
+      })) as Map<String, dynamic>;
+
+  Future<void> deleteStatus(String statusId) async =>
+      _request('DELETE', '/api/v1/statuses/$statusId');
 
   Future<Map<String, dynamic>> action(String statusId, String action) async {
     const actions = {
@@ -293,6 +323,43 @@ class FediverseApi {
     }
     return (jsonDecode(response.body) as Map).cast<String, dynamic>();
   }
+
+  Future<Map<String, dynamic>> updateCredentials({
+    File? avatar,
+    File? header,
+    String? displayName,
+    String? note,
+  }) async {
+    final request = http.MultipartRequest(
+        'PATCH', endpoint('/api/v1/accounts/update_credentials'))
+      ..headers.addAll(_headers);
+    if (avatar != null) {
+      request.files.add(await http.MultipartFile.fromPath('avatar', avatar.path));
+    }
+    if (header != null) {
+      request.files.add(await http.MultipartFile.fromPath('header', header.path));
+    }
+    if (displayName != null) request.fields['display_name'] = displayName;
+    if (note != null) request.fields['note'] = note;
+    final response = await http.Response.fromStream(await _client.send(request));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw FediverseException(response.statusCode, response.body);
+    }
+    return (jsonDecode(response.body) as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> votePoll(String pollId, List<int> choices) async =>
+      (await _request('POST', '/api/v1/polls/$pollId/votes',
+          body: {'choices': choices.map((c) => '$c').toList()}))
+          as Map<String, dynamic>;
+
+  Future<List<Map<String, dynamic>>> tagTimeline(String tag,
+      {int limit = 20, String? maxId}) async =>
+      ((await _request('GET', '/api/v1/timelines/tag/$tag', query: {
+        'limit': '$limit',
+        if (maxId != null) 'max_id': maxId,
+      })) as List)
+          .cast<Map<String, dynamic>>();
 
   void close() => _client.close();
 }

@@ -124,4 +124,11 @@
   <string name="Post published">投稿しました</string>
   <string name="Push subscription updated">プッシュ通知設定を更新しました</string>
   <string name="Support & feedback">サポートとフィードバック</string>
+  <string name="Edit post">投稿を編集</string>
+  <string name="Delete post">投稿を削除</string>
+  <string name="Post deleted">投稿を削除しました</string>
+  <string name="Post updated">投稿を更新しました</string>
+  <string name="Change avatar">アイコンを変更</string>
+  <string name="Change banner">ヘッダーを変更</string>
+  <string name="Profile updated">プロフィールを更新しました</string>
 </strings>
